@@ -99,7 +99,7 @@ static int render_gb_snapshot(const char *path, const struct litho_gb *g,
     /* Live Gemstone dial, lower-left of the bezel's right margin. */
     beat = LITHO_BEAT_COMMIT;
     frozen = 0;
-    litho_ui_draw_gemstone(&fb, 580, 400, 48, pal, beat, frozen);
+    litho_ui_draw_gemstone(&fb, 560, 400, 48, pal, beat, frozen);
 
     litho_fb_fill(&fb, 0, fb.h - 28, fb.w, 28, pal->bar);
     litho_fb_printf(&fb, 12, fb.h - 20, 1, pal->dim,

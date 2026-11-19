@@ -39,9 +39,119 @@ static uint32_t *pix_at(struct litho_fb *fb, int x, int y)
     return (uint32_t *)((uint8_t *)fb->pix + (size_t)y * (size_t)fb->stride_bytes) + x;
 }
 
+
+static uint32_t pack_hw(const struct litho_fb *fb, uint32_t xrgb)
+{
+    unsigned r = (xrgb >> 16) & 0xFFu;
+    unsigned g = (xrgb >> 8) & 0xFFu;
+    unsigned b = xrgb & 0xFFu;
+    unsigned rl = fb->red_len ? fb->red_len : 8;
+    unsigned gl = fb->green_len ? fb->green_len : 8;
+    unsigned bl = fb->blue_len ? fb->blue_len : 8;
+
+    if (rl < 8) {
+        r >>= (8 - rl);
+    }
+    if (gl < 8) {
+        g >>= (8 - gl);
+    }
+    if (bl < 8) {
+        b >>= (8 - bl);
+    }
+    return (r << fb->red_off) | (g << fb->green_off) | (b << fb->blue_off);
+}
+
+static int alloc_shadow(struct litho_fb *fb)
+{
+    fb->w = LITHO_FB_W;
+    fb->h = LITHO_FB_H;
+    fb->stride_bytes = LITHO_FB_W * 4;
+    fb->pix = (uint32_t *)calloc((size_t)fb->w * (size_t)fb->h, 4);
+    if (fb->pix == NULL) {
+        return -ENOMEM;
+    }
+    fb->own_pix = 1;
+    return 0;
+}
+
+static void default_fmt(struct litho_fb *fb, int bpp)
+{
+    fb->hw_bpp = bpp;
+    if (bpp == 16) {
+        fb->red_off = 11;
+        fb->red_len = 5;
+        fb->green_off = 5;
+        fb->green_len = 6;
+        fb->blue_off = 0;
+        fb->blue_len = 5;
+    } else {
+        fb->hw_bpp = 32;
+        fb->red_off = 16;
+        fb->red_len = 8;
+        fb->green_off = 8;
+        fb->green_len = 8;
+        fb->blue_off = 0;
+        fb->blue_len = 8;
+    }
+}
+
+static void blit_to_hw(struct litho_fb *fb)
+{
+    int x, y, dw, dh, ox, oy;
+    const uint8_t *src;
+    uint8_t *dst;
+
+    if (fb == NULL || fb->hw_map == NULL || fb->pix == NULL) {
+        return;
+    }
+    dw = fb->w < fb->hw_w ? fb->w : fb->hw_w;
+    dh = fb->h < fb->hw_h ? fb->h : fb->hw_h;
+    ox = (fb->hw_w - dw) / 2;
+    oy = (fb->hw_h - dh) / 2;
+    if (ox < 0) {
+        ox = 0;
+    }
+    if (oy < 0) {
+        oy = 0;
+    }
+
+    /* Fast path: packed XRGB8888, same layout, same size. */
+    if (fb->hw_bpp == 32 && fb->red_off == 16 && fb->green_off == 8
+        && fb->blue_off == 0 && fb->hw_w == fb->w && fb->hw_h == fb->h
+        && fb->hw_stride == fb->stride_bytes) {
+        memcpy(fb->hw_map, fb->pix, (size_t)fb->h * (size_t)fb->stride_bytes);
+        return;
+    }
+
+    for (y = 0; y < dh; y++) {
+        src = (const uint8_t *)fb->pix + (size_t)y * (size_t)fb->stride_bytes;
+        dst = (uint8_t *)fb->hw_map + (size_t)(y + oy) * (size_t)fb->hw_stride
+            + (size_t)ox * (size_t)(fb->hw_bpp / 8);
+        if (fb->hw_bpp == 16) {
+            uint16_t *d16 = (uint16_t *)dst;
+            const uint32_t *s32 = (const uint32_t *)src;
+            for (x = 0; x < dw; x++) {
+                d16[x] = (uint16_t)pack_hw(fb, s32[x]);
+            }
+        } else {
+            uint32_t *d32 = (uint32_t *)dst;
+            const uint32_t *s32 = (const uint32_t *)src;
+            if (fb->red_off == 16 && fb->green_off == 8 && fb->blue_off == 0) {
+                memcpy(d32, s32, (size_t)dw * 4);
+            } else {
+                for (x = 0; x < dw; x++) {
+                    d32[x] = pack_hw(fb, s32[x]);
+                }
+            }
+        }
+    }
+}
+
+
 int litho_fb_open(struct litho_fb *fb, const char *backend)
 {
     const char *kind = backend ? backend : "auto";
+    int tries, rc;
 
     if (fb == NULL) {
         return -EINVAL;
@@ -51,29 +161,32 @@ int litho_fb_open(struct litho_fb *fb, const char *backend)
     fb->h = LITHO_FB_H;
     fb->stride_bytes = LITHO_FB_W * 4;
     fb->fd = -1;
+    default_fmt(fb, 32);
 
     if (strcmp(kind, "auto") == 0) {
 #ifdef __linux__
-        if (litho_fb_open(fb, "drm") == 0) {
-            return 0;
+        /* Real hardware may need a moment for the panel to bind. */
+        for (tries = 0; tries < 25; tries++) {
+            rc = litho_fb_open(fb, "drm");
+            if (rc == 0) {
+                return 0;
+            }
+            litho_fb_close(fb);
+            rc = litho_fb_open(fb, "fbdev");
+            if (rc == 0) {
+                return 0;
+            }
+            litho_fb_close(fb);
+            if (tries < 24) {
+                usleep(100000);
+            }
         }
-        litho_fb_close(fb);
-        if (litho_fb_open(fb, "fbdev") == 0) {
-            return 0;
-        }
-        litho_fb_close(fb);
 #endif
         kind = "headless";
     }
 
     if (strcmp(kind, "headless") == 0) {
-        fb->pix = (uint32_t *)calloc((size_t)fb->w * (size_t)fb->h, 4);
-        if (fb->pix == NULL) {
-            return -ENOMEM;
-        }
-        fb->own_pix = 1;
-        fb->kind = LITHO_FB_HEADLESS;
-        return 0;
+        return alloc_shadow(fb) == 0 ? 0 : -ENOMEM;
     }
 
 #ifdef __linux__
@@ -93,9 +206,25 @@ int litho_fb_open(struct litho_fb *fb, const char *backend)
             close(fd);
             return err;
         }
-        fb->w = (int)vinfo.xres;
-        fb->h = (int)vinfo.yres;
-        fb->stride_bytes = (int)finfo.line_length;
+        /* Prefer 32-bit XRGB8888 when the driver will take it. */
+        if (vinfo.bits_per_pixel != 32) {
+            vinfo.bits_per_pixel = 32;
+            vinfo.red.offset = 16;
+            vinfo.red.length = 8;
+            vinfo.green.offset = 8;
+            vinfo.green.length = 8;
+            vinfo.blue.offset = 0;
+            vinfo.blue.length = 8;
+            vinfo.transp.offset = 24;
+            vinfo.transp.length = 0;
+            (void)ioctl(fd, FBIOPUT_VSCREENINFO, &vinfo);
+            (void)ioctl(fd, FBIOGET_VSCREENINFO, &vinfo);
+            (void)ioctl(fd, FBIOGET_FSCREENINFO, &finfo);
+        }
+        if (vinfo.bits_per_pixel != 16 && vinfo.bits_per_pixel != 32) {
+            close(fd);
+            return -ENOTSUP;
+        }
         len = (size_t)finfo.smem_len;
         map = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
         if (map == MAP_FAILED) {
@@ -104,9 +233,26 @@ int litho_fb_open(struct litho_fb *fb, const char *backend)
             return err;
         }
         fb->fd = fd;
-        fb->pix = (uint32_t *)map;
+        fb->hw_map = map;
+        fb->hw_map_len = len;
+        fb->hw_w = (int)vinfo.xres;
+        fb->hw_h = (int)vinfo.yres;
+        fb->hw_stride = (int)finfo.line_length;
+        fb->hw_bpp = (int)vinfo.bits_per_pixel;
+        fb->red_off = vinfo.red.offset;
+        fb->red_len = vinfo.red.length;
+        fb->green_off = vinfo.green.offset;
+        fb->green_len = vinfo.green.length;
+        fb->blue_off = vinfo.blue.offset;
+        fb->blue_len = vinfo.blue.length;
+        if (fb->red_len == 0) {
+            default_fmt(fb, fb->hw_bpp);
+        }
         fb->kind = LITHO_FB_FBDEV;
-        fb->handle = (uint32_t)len; /* stash length for munmap */
+        if (alloc_shadow(fb) != 0) {
+            litho_fb_close(fb);
+            return -ENOMEM;
+        }
         return 0;
     }
 
@@ -115,10 +261,16 @@ int litho_fb_open(struct litho_fb *fb, const char *backend)
         const char *paths[] = { "/dev/dri/card0", "/dev/dri/card1", NULL };
         int i, fd = -1;
         struct drm_mode_card_res res;
-        uint32_t conn_ids[16], crtc_ids[16];
+        uint32_t conn_ids[32], crtc_ids[16], enc_ids[16];
         struct drm_mode_create_dumb creq;
         struct drm_mode_map_dumb mreq;
         struct drm_mode_fb_cmd fbcmd;
+        struct drm_mode_crtc crtc;
+        struct drm_mode_modeinfo modes[32];
+        struct drm_mode_modeinfo chosen;
+        struct drm_mode_get_connector conn;
+        uint32_t conn_id = 0, crtc_id = 0, encoder_id = 0;
+        int found = 0, n, m;
         void *map;
 
         for (i = 0; paths[i] != NULL; i++) {
@@ -130,32 +282,75 @@ int litho_fb_open(struct litho_fb *fb, const char *backend)
         if (fd < 0) {
             return -errno;
         }
+        (void)ioctl(fd, DRM_IOCTL_SET_MASTER, 0);
 
         memset(&res, 0, sizeof(res));
-        res.count_connectors = 16;
+        res.count_connectors = 32;
         res.count_crtcs = 16;
         res.connector_id_ptr = (uintptr_t)conn_ids;
         res.crtc_id_ptr = (uintptr_t)crtc_ids;
-        if (ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &res) != 0) {
-            int err = -errno;
+        if (ioctl(fd, DRM_IOCTL_MODE_GETRESOURCES, &res) != 0
+            || res.count_connectors == 0 || res.count_crtcs == 0) {
+            int err = (res.count_connectors == 0 || res.count_crtcs == 0) ? -ENODEV : -errno;
             close(fd);
             return err;
         }
-        if (res.count_connectors == 0 || res.count_crtcs == 0) {
+
+        memset(&chosen, 0, sizeof(chosen));
+        for (n = 0; n < (int)res.count_connectors && n < 32; n++) {
+            memset(&conn, 0, sizeof(conn));
+            conn.connector_id = conn_ids[n];
+            conn.count_modes = 32;
+            conn.count_encoders = 16;
+            conn.modes_ptr = (uintptr_t)modes;
+            conn.encoders_ptr = (uintptr_t)enc_ids;
+            if (ioctl(fd, DRM_IOCTL_MODE_GETCONNECTOR, &conn) != 0) {
+                continue;
+            }
+            if (conn.connection != 1 || conn.count_modes == 0) {
+                continue;
+            }
+            conn_id = conn.connector_id;
+            encoder_id = conn.encoder_id;
+            chosen = modes[0];
+            for (m = 0; m < (int)conn.count_modes && m < 32; m++) {
+                if (modes[m].hdisplay == LITHO_FB_W
+                    && modes[m].vdisplay == LITHO_FB_H) {
+                    chosen = modes[m];
+                    break;
+                }
+            }
+            if (encoder_id == 0 && conn.count_encoders > 0) {
+                encoder_id = enc_ids[0];
+            }
+            found = 1;
+            break;
+        }
+        if (!found) {
             close(fd);
             return -ENODEV;
         }
+        crtc_id = crtc_ids[0];
+        if (encoder_id != 0) {
+            struct drm_mode_get_encoder enc;
+            memset(&enc, 0, sizeof(enc));
+            enc.encoder_id = encoder_id;
+            if (ioctl(fd, DRM_IOCTL_MODE_GETENCODER, &enc) == 0) {
+                if (enc.crtc_id != 0) {
+                    crtc_id = enc.crtc_id;
+                }
+            }
+        }
 
         memset(&creq, 0, sizeof(creq));
-        creq.width = LITHO_FB_W;
-        creq.height = LITHO_FB_H;
+        creq.width = chosen.hdisplay ? chosen.hdisplay : LITHO_FB_W;
+        creq.height = chosen.vdisplay ? chosen.vdisplay : LITHO_FB_H;
         creq.bpp = 32;
         if (ioctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &creq) != 0) {
             int err = -errno;
             close(fd);
             return err;
         }
-
         memset(&fbcmd, 0, sizeof(fbcmd));
         fbcmd.width = creq.width;
         fbcmd.height = creq.height;
@@ -168,7 +363,6 @@ int litho_fb_open(struct litho_fb *fb, const char *backend)
             close(fd);
             return err;
         }
-
         memset(&mreq, 0, sizeof(mreq));
         mreq.handle = creq.handle;
         if (ioctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &mreq) != 0) {
@@ -176,25 +370,44 @@ int litho_fb_open(struct litho_fb *fb, const char *backend)
             close(fd);
             return err;
         }
-        map = mmap(NULL, (size_t)creq.size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, (off_t)mreq.offset);
+        map = mmap(NULL, (size_t)creq.size, PROT_READ | PROT_WRITE, MAP_SHARED,
+                   fd, (off_t)mreq.offset);
         if (map == MAP_FAILED) {
             int err = -errno;
             close(fd);
             return err;
         }
 
-        /* Best-effort SETCRTC is left for a later pass once the connector
-           mode list is walked; the mapping is enough to draw. */
+        memset(&crtc, 0, sizeof(crtc));
+        crtc.crtc_id = crtc_id;
+        crtc.fb_id = fbcmd.fb_id;
+        crtc.set_connectors_ptr = (uintptr_t)&conn_id;
+        crtc.count_connectors = 1;
+        crtc.mode = chosen;
+        crtc.mode_valid = 1;
+        if (ioctl(fd, DRM_IOCTL_MODE_SETCRTC, &crtc) != 0) {
+            /* Invisible buffer is not a success — fall back to fbdev. */
+            munmap(map, (size_t)creq.size);
+            close(fd);
+            return -EIO;
+        }
+
         fb->fd = fd;
-        fb->pix = (uint32_t *)map;
-        fb->stride_bytes = (int)creq.pitch;
-        fb->w = LITHO_FB_W;
-        fb->h = LITHO_FB_H;
+        fb->hw_map = map;
+        fb->hw_map_len = (size_t)creq.size;
+        fb->hw_w = (int)creq.width;
+        fb->hw_h = (int)creq.height;
+        fb->hw_stride = (int)creq.pitch;
+        default_fmt(fb, 32);
         fb->kind = LITHO_FB_DRM;
         fb->fb_id = fbcmd.fb_id;
         fb->handle = creq.handle;
-        fb->crtc_id = crtc_ids[0];
-        fb->conn_id = conn_ids[0];
+        fb->crtc_id = crtc_id;
+        fb->conn_id = conn_id;
+        if (alloc_shadow(fb) != 0) {
+            litho_fb_close(fb);
+            return -ENOMEM;
+        }
         return 0;
     }
 #endif
@@ -210,11 +423,11 @@ void litho_fb_close(struct litho_fb *fb)
     if (fb->own_pix && fb->pix != NULL) {
         free(fb->pix);
         fb->pix = NULL;
-    } else if (fb->pix != NULL && fb->fd >= 0) {
-        size_t len = (fb->kind == LITHO_FB_FBDEV) ? (size_t)fb->handle
-                                                  : (size_t)fb->stride_bytes * (size_t)fb->h;
-        munmap(fb->pix, len);
-        fb->pix = NULL;
+    }
+    if (fb->hw_map != NULL && fb->hw_map_len > 0) {
+        munmap(fb->hw_map, fb->hw_map_len);
+        fb->hw_map = NULL;
+        fb->hw_map_len = 0;
     }
     if (fb->fd >= 0) {
         close(fb->fd);
@@ -228,9 +441,7 @@ void litho_fb_flip(struct litho_fb *fb)
     if (fb == NULL) {
         return;
     }
-    /* Dumb buffers and fbdev are immediately visible. A later pass can
-       issue a page flip once the panel is up. */
-    (void)fb;
+    blit_to_hw(fb);
 }
 
 void litho_fb_clear(struct litho_fb *fb, uint32_t color)

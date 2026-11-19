@@ -2,6 +2,7 @@
 #ifndef LITHO_FB_INCLUDED
 #define LITHO_FB_INCLUDED
 
+#include <stddef.h>
 #include <stdint.h>
 
 #define LITHO_FB_W 640
@@ -27,6 +28,21 @@ struct litho_fb {
     uint32_t       fb_id;
     uint32_t       handle;
     uint32_t       saved_crtc;
+    /* Hardware scanout (may be 16-bit RGB565 or 32-bit XRGB8888).
+       Drawing always happens in a 640x480 XRGB8888 shadow; flip() converts. */
+    void          *hw_map;
+    size_t         hw_map_len;
+    int            hw_w;
+    int            hw_h;
+    int            hw_stride;
+    int            hw_bpp;
+    unsigned       red_off, green_off, blue_off;
+    unsigned       red_len, green_len, blue_len;
+};
+
+enum {
+    LITHO_FB_BPP_16 = 16,
+    LITHO_FB_BPP_32 = 32
 };
 
 /* backend: "auto", "drm", "fbdev", or "headless". */

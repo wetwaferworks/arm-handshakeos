@@ -233,7 +233,7 @@ void litho_ui_draw(struct litho_fb *fb,
     }
     (void)wdog;
 
-    draw_gemstone(fb, hero_x + hero_w - 90, hero_y + 102, 56, pal, beat, frozen);
+    draw_gemstone(fb, hero_x + hero_w - 110, hero_y + 102, 56, pal, beat, frozen);
 
     /* Four tiles */
     tile_y = hero_y + hero_h + margin;
