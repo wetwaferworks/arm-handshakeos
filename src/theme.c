@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: MIT */
-#include "litho_theme.h"
+#include "hs_theme.h"
 
-static const struct litho_palette k_themes[LITHO_THEME_COUNT] = {
-    [LITHO_THEME_PURPLE] = {
+static const struct hs_palette k_themes[HS_THEME_COUNT] = {
+    [HS_THEME_PURPLE] = {
         .name = "Deep Purple",
         .short_name = "Purple",
         .bg         = 0x12081Fu,
@@ -21,7 +21,7 @@ static const struct litho_palette k_themes[LITHO_THEME_COUNT] = {
         .shadow     = 0x0A0414u,
         .good       = 0x66FFAAu,
     },
-    [LITHO_THEME_GREEN] = {
+    [HS_THEME_GREEN] = {
         .name = "Matrix Green",
         .short_name = "Green",
         .bg         = 0x020802u,
@@ -42,21 +42,21 @@ static const struct litho_palette k_themes[LITHO_THEME_COUNT] = {
     },
 };
 
-const struct litho_palette *litho_theme_get(litho_theme_id_t id)
+const struct hs_palette *hs_theme_get(hs_theme_id_t id)
 {
-    if ((unsigned)id >= (unsigned)LITHO_THEME_COUNT) {
-        id = LITHO_THEME_PURPLE;
+    if ((unsigned)id >= (unsigned)HS_THEME_COUNT) {
+        id = HS_THEME_PURPLE;
     }
     return &k_themes[id];
 }
 
-litho_theme_id_t litho_theme_next(litho_theme_id_t id)
+hs_theme_id_t hs_theme_next(hs_theme_id_t id)
 {
-    return (litho_theme_id_t)(((unsigned)id + 1u) % (unsigned)LITHO_THEME_COUNT);
+    return (hs_theme_id_t)(((unsigned)id + 1u) % (unsigned)HS_THEME_COUNT);
 }
 
-litho_theme_id_t litho_theme_prev(litho_theme_id_t id)
+hs_theme_id_t hs_theme_prev(hs_theme_id_t id)
 {
-    return (litho_theme_id_t)(((unsigned)id + (unsigned)LITHO_THEME_COUNT - 1u)
-                              % (unsigned)LITHO_THEME_COUNT);
+    return (hs_theme_id_t)(((unsigned)id + (unsigned)HS_THEME_COUNT - 1u)
+                              % (unsigned)HS_THEME_COUNT);
 }

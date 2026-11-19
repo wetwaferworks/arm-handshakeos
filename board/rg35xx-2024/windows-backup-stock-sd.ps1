@@ -1,7 +1,7 @@
-# LithoOS — back up the stock RG35XX 2024 SD card on Windows.
+# HandshakeOS — back up the stock RG35XX 2024 SD card on Windows.
 # Run in an elevated PowerShell. This script only READS a disk you name.
 # It will not write to the card. Put the stock card away when you are done
-# and do all LithoOS experiments on a SECOND card.
+# and do all HandshakeOS experiments on a SECOND card.
 #
 # Usage (Administrator):
 #   Get-Disk
@@ -19,7 +19,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "=== LithoOS stock-card backup (read only) ==="
+Write-Host "=== HandshakeOS stock-card backup (read only) ==="
 Get-Disk | Format-Table Number, FriendlyName, Size, PartitionStyle, BusType, OperationalStatus
 
 $disk = Get-Disk -Number $DiskNumber
@@ -84,5 +84,5 @@ Write-Host "Wrote $dest  ($copied bytes)"
 Write-Host "SHA-256 $hash"
 Write-Host "Checksum file: $hashFile"
 Write-Host ""
-Write-Host "Next: eject the stock card, put it somewhere safe, and use a SECOND card for LithoOS."
+Write-Host "Next: eject the stock card, put it somewhere safe, and use a SECOND card for HandshakeOS."
 Write-Host "A later pass can write a boot image with Rufus, balenaEtcher, or dd — never onto this stock card."

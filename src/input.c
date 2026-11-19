@@ -4,7 +4,7 @@
 #define _GNU_SOURCE
 #endif
 #endif
-#include "litho_input.h"
+#include "hs_input.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -15,7 +15,7 @@
 #include <string.h>
 #include <unistd.h>
 
-static const char *const k_btn_names[LITHO_BTN_COUNT] = {
+static const char *const k_btn_names[HS_BTN_COUNT] = {
     "Up", "Down", "Left", "Right",
     "A", "B", "X", "Y",
     "L1", "R1", "L2", "R2",
@@ -23,15 +23,15 @@ static const char *const k_btn_names[LITHO_BTN_COUNT] = {
     "Vol+", "Vol-", "Power"
 };
 
-const char *litho_btn_name(litho_btn_t btn)
+const char *hs_btn_name(hs_btn_t btn)
 {
-    if ((unsigned)btn >= (unsigned)LITHO_BTN_COUNT) {
+    if ((unsigned)btn >= (unsigned)HS_BTN_COUNT) {
         return "?";
     }
     return k_btn_names[btn];
 }
 
-static int map_code(uint16_t type, uint16_t code, litho_btn_t *out)
+static int map_code(uint16_t type, uint16_t code, hs_btn_t *out)
 {
     if (type != EV_KEY) {
         return 0;
@@ -40,81 +40,81 @@ static int map_code(uint16_t type, uint16_t code, litho_btn_t *out)
     switch (code) {
     case BTN_DPAD_UP:
     case KEY_UP:
-        *out = LITHO_BTN_UP;
+        *out = HS_BTN_UP;
         return 1;
     case BTN_DPAD_DOWN:
     case KEY_DOWN:
-        *out = LITHO_BTN_DOWN;
+        *out = HS_BTN_DOWN;
         return 1;
     case BTN_DPAD_LEFT:
     case KEY_LEFT:
-        *out = LITHO_BTN_LEFT;
+        *out = HS_BTN_LEFT;
         return 1;
     case BTN_DPAD_RIGHT:
     case KEY_RIGHT:
-        *out = LITHO_BTN_RIGHT;
+        *out = HS_BTN_RIGHT;
         return 1;
     case BTN_EAST:      /* physical A */
     case KEY_ENTER:
     case KEY_Z:
-        *out = LITHO_BTN_A;
+        *out = HS_BTN_A;
         return 1;
     case BTN_SOUTH:     /* physical B */
     case KEY_ESC:
     case KEY_X:
-        *out = LITHO_BTN_B;
+        *out = HS_BTN_B;
         return 1;
     case BTN_NORTH:     /* physical X */
     case KEY_A:
-        *out = LITHO_BTN_X;
+        *out = HS_BTN_X;
         return 1;
     case BTN_WEST:      /* physical Y */
     case KEY_S:
-        *out = LITHO_BTN_Y;
+        *out = HS_BTN_Y;
         return 1;
     case BTN_TL:
     case KEY_Q:
     case KEY_TAB:
-        *out = LITHO_BTN_L1;
+        *out = HS_BTN_L1;
         return 1;
     case BTN_TR:
     case KEY_E:
-        *out = LITHO_BTN_R1;
+        *out = HS_BTN_R1;
         return 1;
     case BTN_TL2:
-        *out = LITHO_BTN_L2;
+        *out = HS_BTN_L2;
         return 1;
     case BTN_TR2:
-        *out = LITHO_BTN_R2;
+        *out = HS_BTN_R2;
         return 1;
     case BTN_START:
     case KEY_RIGHTCTRL:
-        *out = LITHO_BTN_START;
+        *out = HS_BTN_START;
         return 1;
     case BTN_SELECT:
     case KEY_RIGHTSHIFT:
-        *out = LITHO_BTN_SELECT;
+        *out = HS_BTN_SELECT;
         return 1;
     case BTN_MODE:
     case KEY_F1:
-        *out = LITHO_BTN_MENU;
+        *out = HS_BTN_MENU;
         return 1;
     case KEY_VOLUMEUP:
-        *out = LITHO_BTN_VOLUP;
+        *out = HS_BTN_VOLUP;
         return 1;
     case KEY_VOLUMEDOWN:
-        *out = LITHO_BTN_VOLDOWN;
+        *out = HS_BTN_VOLDOWN;
         return 1;
     case KEY_POWER:
     case KEY_P:
-        *out = LITHO_BTN_POWER;
+        *out = HS_BTN_POWER;
         return 1;
     default:
         return 0;
     }
 }
 
-int litho_input_open(struct litho_input *in)
+int hs_input_open(struct hs_input *in)
 {
     DIR *dir;
     struct dirent *ent;
@@ -131,7 +131,7 @@ int litho_input_open(struct litho_input *in)
         return 0; /* headless is fine */
     }
 
-    while ((ent = readdir(dir)) != NULL && in->n_fds < LITHO_INPUT_MAX_FDS) {
+    while ((ent = readdir(dir)) != NULL && in->n_fds < HS_INPUT_MAX_FDS) {
         if (strncmp(ent->d_name, "event", 5) != 0) {
             continue;
         }
@@ -146,7 +146,7 @@ int litho_input_open(struct litho_input *in)
     return 0;
 }
 
-void litho_input_close(struct litho_input *in)
+void hs_input_close(struct hs_input *in)
 {
     int i;
 
@@ -162,9 +162,9 @@ void litho_input_close(struct litho_input *in)
     in->n_fds = 0;
 }
 
-static void apply_event(struct litho_input *in, const struct input_event *ev)
+static void apply_event(struct hs_input *in, const struct input_event *ev)
 {
-    litho_btn_t btn;
+    hs_btn_t btn;
     uint32_t bit;
 
     if (!map_code(ev->type, ev->code, &btn)) {
@@ -186,9 +186,9 @@ static void apply_event(struct litho_input *in, const struct input_event *ev)
     /* ev->value == 2 is key repeat; ignore for edge triggers. */
 }
 
-int litho_input_poll(struct litho_input *in, int timeout_ms)
+int hs_input_poll(struct hs_input *in, int timeout_ms)
 {
-    struct pollfd pfds[LITHO_INPUT_MAX_FDS];
+    struct pollfd pfds[HS_INPUT_MAX_FDS];
     struct input_event ev;
     int i, n, r;
     ssize_t got;
@@ -243,17 +243,17 @@ int litho_input_poll(struct litho_input *in, int timeout_ms)
     return n;
 }
 
-int litho_input_down(const struct litho_input *in, litho_btn_t btn)
+int hs_input_down(const struct hs_input *in, hs_btn_t btn)
 {
-    if (in == NULL || (unsigned)btn >= (unsigned)LITHO_BTN_COUNT) {
+    if (in == NULL || (unsigned)btn >= (unsigned)HS_BTN_COUNT) {
         return 0;
     }
     return (in->down & (1u << (unsigned)btn)) != 0;
 }
 
-int litho_input_pressed(const struct litho_input *in, litho_btn_t btn)
+int hs_input_pressed(const struct hs_input *in, hs_btn_t btn)
 {
-    if (in == NULL || (unsigned)btn >= (unsigned)LITHO_BTN_COUNT) {
+    if (in == NULL || (unsigned)btn >= (unsigned)HS_BTN_COUNT) {
         return 0;
     }
     return (in->pressed & (1u << (unsigned)btn)) != 0;

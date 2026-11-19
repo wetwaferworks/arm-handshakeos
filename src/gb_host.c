@@ -3,10 +3,10 @@
 #define _GNU_SOURCE
 #endif
 
-#include "litho_fb.h"
-#include "litho_gb.h"
-#include "litho_theme.h"
-#include "litho_ui.h"
+#include "hs_fb.h"
+#include "hs_gb.h"
+#include "hs_theme.h"
+#include "hs_ui.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +16,7 @@ static void usage(const char *argv0)
 {
     fprintf(stderr,
             "Usage: %s [options]\n"
-            "  --rom=PATH.gb           default roms/litho-demo.gb\n"
+            "  --rom=PATH.gb           default roms/handshake-demo.gb\n"
             "  --frames=N              default 90\n"
             "  --workers=N             default 3\n"
             "  --snapshot=PATH.png     Deep Purple shell + live GB frame\n"
@@ -25,11 +25,11 @@ static void usage(const char *argv0)
             argv0);
 }
 
-static int render_gb_snapshot(const char *path, const struct litho_gb *g,
-                              const struct litho_gb_stats *st)
+static int render_gb_snapshot(const char *path, const struct hs_gb *g,
+                              const struct hs_gb_stats *st)
 {
-    struct litho_fb fb;
-    const struct litho_palette *pal;
+    struct hs_fb fb;
+    const struct hs_palette *pal;
     const uint32_t gbp[4] = {
         0x00f4e8ffu, /* light lilac */
         0x00c084e0u,
@@ -37,131 +37,131 @@ static int render_gb_snapshot(const char *path, const struct litho_gb *g,
         0x001a0828u  /* deep purple */
     };
     const int scale = 2;
-    const int gw = LITHO_GB_W * scale;
-    const int gh = LITHO_GB_H * scale;
+    const int gw = HS_GB_W * scale;
+    const int gh = HS_GB_H * scale;
     int gx, gy;
-    litho_beat_t beat;
+    hs_beat_t beat;
     int frozen;
 
-    if (litho_fb_open(&fb, "headless") != 0) {
+    if (hs_fb_open(&fb, "headless") != 0) {
         fprintf(stderr, "headless fb open failed\n");
         return 1;
     }
-    pal = litho_theme_get(LITHO_THEME_PURPLE);
-    litho_fb_clear(&fb, pal->bg);
+    pal = hs_theme_get(HS_THEME_PURPLE);
+    hs_fb_clear(&fb, pal->bg);
 
-    litho_fb_fill(&fb, 0, 0, fb.w, 40, pal->bar);
-    litho_fb_fill(&fb, 0, 38, fb.w, 2, pal->accent);
-    litho_fb_text(&fb, 12, 12, 2, pal->accent2, "LITHOOS");
-    litho_fb_printf(&fb, 180, 16, 1, pal->dim, "Deep Purple  +  Peanut-GB");
-    litho_fb_printf(&fb, 500, 16, 1, pal->text, "DMG");
+    hs_fb_fill(&fb, 0, 0, fb.w, 40, pal->bar);
+    hs_fb_fill(&fb, 0, 38, fb.w, 2, pal->accent);
+    hs_fb_text(&fb, 12, 12, 2, pal->accent2, "HandshakeOS");
+    hs_fb_printf(&fb, 200, 16, 1, pal->dim, "Deep Purple  +  Peanut-GB");
+    hs_fb_printf(&fb, 500, 16, 1, pal->text, "DMG");
 
     /* Left status rail */
-    litho_fb_fill_round(&fb, 12, 56, 200, 392, 8, pal->tile);
-    litho_fb_rect(&fb, 12, 56, 200, 392, 1, pal->border);
-    litho_fb_text(&fb, 24, 68, 1, pal->dim, "HANDSHAKE");
-    litho_fb_text(&fb, 24, 84, 1, pal->text, "3+1 seating");
-    litho_fb_text(&fb, 24, 112, 1, pal->dim, "EPOCH");
-    litho_fb_printf(&fb, 24, 126, 2, pal->value, "%llu",
+    hs_fb_fill_round(&fb, 12, 56, 200, 392, 8, pal->tile);
+    hs_fb_rect(&fb, 12, 56, 200, 392, 1, pal->border);
+    hs_fb_text(&fb, 24, 68, 1, pal->dim, "HANDSHAKE");
+    hs_fb_text(&fb, 24, 84, 1, pal->text, "3+1 seating");
+    hs_fb_text(&fb, 24, 112, 1, pal->dim, "EPOCH");
+    hs_fb_printf(&fb, 24, 126, 2, pal->value, "%llu",
                     (unsigned long long)st->epoch);
-    litho_fb_text(&fb, 24, 160, 1, pal->dim, "LEDGER");
-    litho_fb_printf(&fb, 24, 174, 1, pal->accent2, "%016llx",
+    hs_fb_text(&fb, 24, 160, 1, pal->dim, "LEDGER");
+    hs_fb_printf(&fb, 24, 174, 1, pal->accent2, "%016llx",
                     (unsigned long long)st->ledger_hash);
-    litho_fb_text(&fb, 24, 200, 1, pal->dim, "FRAME CRC");
-    litho_fb_printf(&fb, 24, 214, 1, pal->text, "%016llx",
+    hs_fb_text(&fb, 24, 200, 1, pal->dim, "FRAME CRC");
+    hs_fb_printf(&fb, 24, 214, 1, pal->text, "%016llx",
                     (unsigned long long)st->frame_crc);
-    litho_fb_text(&fb, 24, 240, 1, pal->dim, "AUDIO CRC");
-    litho_fb_printf(&fb, 24, 254, 1, pal->text, "%016llx",
+    hs_fb_text(&fb, 24, 240, 1, pal->dim, "AUDIO CRC");
+    hs_fb_printf(&fb, 24, 254, 1, pal->text, "%016llx",
                     (unsigned long long)st->audio_crc);
-    litho_fb_text(&fb, 24, 280, 1, pal->dim, "AUDIO XRUNS");
-    litho_fb_printf(&fb, 24, 294, 2, st->xruns ? pal->warn : pal->good, "%llu",
+    hs_fb_text(&fb, 24, 280, 1, pal->dim, "AUDIO XRUNS");
+    hs_fb_printf(&fb, 24, 294, 2, st->xruns ? pal->warn : pal->good, "%llu",
                     (unsigned long long)st->xruns);
-    litho_fb_text(&fb, 24, 330, 1, pal->dim, "OVERRUNS");
-    litho_fb_printf(&fb, 24, 344, 2, st->overruns ? pal->warn : pal->good, "%llu",
+    hs_fb_text(&fb, 24, 330, 1, pal->dim, "OVERRUNS");
+    hs_fb_printf(&fb, 24, 344, 2, st->overruns ? pal->warn : pal->good, "%llu",
                     (unsigned long long)st->overruns);
-    litho_fb_text(&fb, 24, 380, 1, pal->dim, "WATCHDOG");
-    litho_fb_text(&fb, 24, 394, 1, pal->good, "OK");
-    litho_fb_printf(&fb, 24, 416, 1, pal->dim, "frames %llu",
+    hs_fb_text(&fb, 24, 380, 1, pal->dim, "WATCHDOG");
+    hs_fb_text(&fb, 24, 394, 1, pal->good, "OK");
+    hs_fb_printf(&fb, 24, 416, 1, pal->dim, "frames %llu",
                     (unsigned long long)st->frames);
 
     /* GB bezel, scale 2 = 320x288, sits to the right of the rail. */
     gx = 236;
     gy = 72;
-    litho_fb_fill_round(&fb, gx - 16, gy - 24, gw + 32, gh + 56, 10, pal->surface);
-    litho_fb_rect(&fb, gx - 16, gy - 24, gw + 32, gh + 56, 2, pal->accent);
-    litho_fb_text(&fb, gx, gy - 18, 1, pal->dim, "LITHO DEMO  (MIT, original)");
-    litho_gb_blit(&fb, gx, gy, scale, litho_gb_framebuffer(g), gbp);
-    litho_fb_printf(&fb, gx, gy + gh + 8, 1, pal->text,
+    hs_fb_fill_round(&fb, gx - 16, gy - 24, gw + 32, gh + 56, 10, pal->surface);
+    hs_fb_rect(&fb, gx - 16, gy - 24, gw + 32, gh + 56, 2, pal->accent);
+    hs_fb_text(&fb, gx, gy - 18, 1, pal->dim, "HandshakeOS demo (MIT, original)");
+    hs_gb_blit(&fb, gx, gy, scale, hs_gb_framebuffer(g), gbp);
+    hs_fb_printf(&fb, gx, gy + gh + 8, 1, pal->text,
                     "xruns %llu   epoch %llu",
                     (unsigned long long)st->xruns,
                     (unsigned long long)st->epoch);
 
     /* Live Gemstone dial, lower-left of the bezel's right margin. */
-    beat = LITHO_BEAT_COMMIT;
+    beat = HS_BEAT_COMMIT;
     frozen = 0;
-    litho_ui_draw_gemstone(&fb, 560, 400, 48, pal, beat, frozen);
+    hs_ui_draw_gemstone(&fb, 560, 400, 48, pal, beat, frozen);
 
-    litho_fb_fill(&fb, 0, fb.h - 28, fb.w, 28, pal->bar);
-    litho_fb_printf(&fb, 12, fb.h - 20, 1, pal->dim,
+    hs_fb_fill(&fb, 0, fb.h - 28, fb.w, 28, pal->bar);
+    hs_fb_printf(&fb, 12, fb.h - 20, 1, pal->dim,
                     "phase-boundary PCM  +  hash-chained ledger  +  zero mutexes");
 
-    litho_fb_flip(&fb);
-    if (litho_fb_snapshot_png(&fb, path) != 0) {
+    hs_fb_flip(&fb);
+    if (hs_fb_snapshot_png(&fb, path) != 0) {
         fprintf(stderr, "snapshot %s failed\n", path);
-        litho_fb_close(&fb);
+        hs_fb_close(&fb);
         return 1;
     }
     fprintf(stderr, "wrote %s\n", path);
-    litho_fb_close(&fb);
+    hs_fb_close(&fb);
     return 0;
 }
 
 static int run_once(const char *rom, int workers, uint64_t frames,
-                    struct litho_gb **keep, struct litho_gb_stats *st)
+                    struct hs_gb **keep, struct hs_gb_stats *st)
 {
-    struct litho_gb *g = litho_gb_create();
+    struct hs_gb *g = hs_gb_create();
     uint64_t t;
     int rc;
 
     if (g == NULL) {
         return -1;
     }
-    rc = litho_gb_load_rom(g, rom);
+    rc = hs_gb_load_rom(g, rom);
     if (rc != 0) {
         fprintf(stderr, "load %s failed: %d\n", rom, rc);
-        litho_gb_destroy(g);
+        hs_gb_destroy(g);
         return rc;
     }
-    (void)litho_gb_script(g, 0, 0);
+    (void)hs_gb_script(g, 0, 0);
     for (t = 20; t < 40 && t < frames; t++) {
-        (void)litho_gb_script(g, t, 0x10);
+        (void)hs_gb_script(g, t, 0x10);
     }
     for (t = 40; t < 60 && t < frames; t++) {
-        (void)litho_gb_script(g, t, 0x11);
+        (void)hs_gb_script(g, t, 0x11);
     }
     for (t = 60; t < frames; t++) {
-        (void)litho_gb_script(g, t, 0x80);
+        (void)hs_gb_script(g, t, 0x80);
     }
-    rc = litho_gb_start(g, workers);
+    rc = hs_gb_start(g, workers);
     if (rc != 0) {
         fprintf(stderr, "start failed: %d\n", rc);
-        litho_gb_destroy(g);
+        hs_gb_destroy(g);
         return rc;
     }
-    rc = litho_gb_run_frames(g, frames);
-    litho_gb_stats(g, st);
+    rc = hs_gb_run_frames(g, frames);
+    hs_gb_stats(g, st);
     if (keep != NULL) {
         *keep = g;
         return rc;
     }
-    litho_gb_stop(g);
-    litho_gb_destroy(g);
+    hs_gb_stop(g);
+    hs_gb_destroy(g);
     return rc;
 }
 
 static int run_scoreboard(const char *rom, uint64_t frames, int runs)
 {
-    struct litho_gb_stats first, st;
+    struct hs_gb_stats first, st;
     int workers, i, rc;
     int fails = 0;
 
@@ -227,15 +227,15 @@ static int run_scoreboard(const char *rom, uint64_t frames, int runs)
 
 int main(int argc, char **argv)
 {
-    const char *rom = "roms/litho-demo.gb";
+    const char *rom = "roms/handshake-demo.gb";
     const char *snapshot = NULL;
     int workers = 3;
     int scoreboard = 0;
     int runs = 100;
     uint64_t frames = 90;
     int i, rc;
-    struct litho_gb *kept = NULL;
-    struct litho_gb_stats st;
+    struct hs_gb *kept = NULL;
+    struct hs_gb_stats st;
 
     for (i = 1; i < argc; i++) {
         if (strncmp(argv[i], "--rom=", 6) == 0) {
@@ -280,8 +280,8 @@ int main(int argc, char **argv)
            (unsigned long long)st.frames);
     if (snapshot) {
         rc = render_gb_snapshot(snapshot, kept, &st);
-        litho_gb_stop(kept);
-        litho_gb_destroy(kept);
+        hs_gb_stop(kept);
+        hs_gb_destroy(kept);
         return rc;
     }
     return 0;

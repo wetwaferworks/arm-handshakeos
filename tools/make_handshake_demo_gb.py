@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Build roms/litho-demo.gb — an original MIT Game Boy demo for LithoOS tests.
+"""Build roms/handshake-demo.gb — an original MIT Game Boy demo for HandshakeOS tests.
 
-A tiny DMG program: a LITHOOS title, a bouncing gem sprite, and a D-pad that
+A tiny DMG program: a HandshakeOS title, a bouncing gem sprite, and a D-pad that
 moves it. No third-party assets. Header checksums are computed here.
 """
 from pathlib import Path
@@ -31,7 +31,7 @@ logo = bytes.fromhex(
 )
 put(0x0104, logo)
 
-title = b"LITHO DEMO"
+title = b"HandshakeOS"
 put(0x0134, title + bytes(15 - len(title)))
 put(0x0143, 0x00)  # DMG
 put(0x0144, 0x00)
@@ -69,7 +69,7 @@ def emit(*bs):
 #   ld bc, TILELEN
 # copy: ld a,[hl+]; ld [de],a; inc de; dec bc; ld a,b; or c; jr nz,copy
 #   ; clear VRAM tilemap 9800
-#   ... write "LITHOOS" at row 2, and a gem tile that we move via SCX/sprite
+#   ... write "HANDSHAKEOS" at row 2, and a gem tile that we move via SCX/sprite
 #   ld a,$E4 / ld ($FF47),a  BGP
 #   ld a,$D0 / ld ($FF48),a  OBP0
 #   ; LCDC on: BG+OBJ 8000 addressing, $91
@@ -129,13 +129,16 @@ font = {
     "E": ["XXXXXX.","X......","X......","XXXXX..","X......","X......","XXXXXX.","........"],
     "M": ["X....X.","XX..XX.","X.XX.X.","X....X.","X....X.","X....X.","X....X.","........"],
     " ": ["........"] * 8,
+    "A": [".XXXX..","X....X.","X....X.","XXXXXX.","X....X.","X....X.","X....X.","........"],
+    "N": ["X....X.","XX...X.","X.X..X.","X..X.X.","X...XX.","X....X.","X....X.","........"],
+    "K": ["X....X.","X...X..","X..X...","XXX....","X..X...","X...X..","X....X.","........"],
 }
-order = "LITHO SDEMO "  # 12 tiles starting at index 3
-for ch in "LITHOSDEMO ":
+# Unique glyphs from index 3. 3 specials + 13 letters/space = 16 tiles (256 bytes).
+glyph_order = "ADEHIKLMNOST "
+glyph_index = {}
+for i, ch in enumerate(glyph_order):
     tiles.append(glyph(font[ch]))
-
-# tile 14 (index 14) already last space? LITHOSDEMO space = 11 chars + empty+diamond+block = 14 tiles (0-13)
-# 11 letters/space from "LITHOSDEMO " = 11, plus 3 = 14 tiles (0-13). Good.
+    glyph_index[ch] = 3 + i
 
 tile_blob = b"".join(tiles)
 assert len(tile_blob) == 16 * len(tiles)
@@ -238,17 +241,16 @@ P(0x78, 0xB1)  # ld a,b / or c
 P(0x7B)        # ld a,e       restore 0
 P(0x20, rel(clear_start, len(prog)+2))
 
-# Write "LITHOOS" on row 4 (y=4), x=6: tiles L I T H O O S = indices
-# L=3 I=4 T=5 H=6 O=7 O=7 S=8
-# tilemap row 4 starts at 9800 + 4*32 = 9880, +6 = 9886
-msg = [3, 4, 5, 6, 7, 7, 8]  # LITHOOS
-P(ld_hl(0x9886))
+# Write "HANDSHAKEOS" on row 4, centered in the 20-tile visible width (x=4).
+# tilemap row 4 starts at 9800 + 4*32 = 9880, +4 = 9884
+msg = [glyph_index[c] for c in "HANDSHAKEOS"]
+P(ld_hl(0x9884))
 for t in msg:
     P(ld_a(t), 0x22)  # ld a,n; ld [hl+],a
 
-# "DEMO" on row 6, x=8: D E M O = 9,10,11,7
+# "DEMO" on row 6, x=8
 P(ld_hl(0x98C8))
-for t in (9, 10, 11, 7):
+for t in [glyph_index[c] for c in "DEMO"]:
     P(ld_a(t), 0x22)
 
 # Visible frame: fill row 0 and row 17 of the tilemap with solid tile 2.
@@ -621,6 +623,6 @@ rom[0x014F] = 0
 s = sum(rom) & 0xFFFF
 put(0x014E, bytes([(s >> 8) & 0xFF, s & 0xFF]))
 
-out = Path("/workspace/lithoos/roms/litho-demo.gb")
+out = Path(__file__).resolve().parents[1] / "roms" / "handshake-demo.gb"
 out.write_bytes(bytes(rom))
 print("wrote", out, "size", len(rom), "header_ck", f"{x:02X}", "global", f"{s:04X}")

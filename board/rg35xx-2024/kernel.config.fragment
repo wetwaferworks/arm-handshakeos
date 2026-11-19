@@ -1,4 +1,4 @@
-# LithoOS kernel fragment for the Anbernic RG35XX 2024 (Allwinner H700)
+# HandshakeOS kernel fragment for the Anbernic RG35XX 2024 (Allwinner H700)
 # Apply on top of an arm64 defconfig from mainline Linux >= 6.12
 # (6.12 is the floor because CONFIG_SCHED_CLASS_EXT arrives there).
 # ROCKNIX was on kernel 7.2 as of 2026-08-17; prefer a current stable
@@ -89,7 +89,7 @@ CONFIG_REGULATOR=y
 CONFIG_REGULATOR_FIXED_VOLTAGE=y
 CONFIG_GPIO_CDEV=y
 
-# Built-in (no modules) so litho-init can light /dev/fb0 without an extra rootfs
+# Built-in (no modules) so handshake-init can light /dev/fb0 without an extra rootfs
 CONFIG_DRM_FBDEV_EMULATION=y
 CONFIG_FB=y
 CONFIG_FRAMEBUFFER_CONSOLE=y

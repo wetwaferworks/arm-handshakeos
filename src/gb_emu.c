@@ -3,8 +3,8 @@
 #define _GNU_SOURCE
 #endif
 
-#include "litho_gb.h"
-#include "litho_fb.h"
+#include "hs_gb.h"
+#include "hs_fb.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -38,35 +38,35 @@ void audio_write(const uint16_t addr, const uint8_t val)
 #pragma GCC diagnostic pop
 
 /* AUDIO_SAMPLES_TOTAL is not an integer constant (float division). */
-#define LITHO_GB_PCM_MAX 2048
+#define HS_GB_PCM_MAX 2048
 
-struct litho_gb {
+struct hs_gb {
     struct gb_s gb;
     uint8_t *rom;
     size_t   rom_size;
     uint8_t *cart_ram;
     size_t   cart_ram_size;
 
-    uint8_t  fb[LITHO_GB_H][LITHO_GB_W];
-    int16_t  pcm[LITHO_GB_PCM_MAX];
+    uint8_t  fb[HS_GB_H][HS_GB_W];
+    int16_t  pcm[HS_GB_PCM_MAX];
     _Atomic  uint32_t pcm_ready; /* 1 = unconsumed snapshot */
     _Atomic  uint64_t xruns;
 
     uint8_t  joy_held; /* JOYPAD_* bits, 1 = pressed */
     int      started;
-    struct litho_hs hs;
+    struct hs_hs hs;
 
     uint64_t frame_crc;
     uint64_t audio_crc;
     uint64_t frames_done;
 
     uint32_t n_script;
-    struct { uint64_t tick; uint8_t mask; } script[LITHO_GB_SCRIPT_MAX];
+    struct { uint64_t tick; uint8_t mask; } script[HS_GB_SCRIPT_MAX];
 };
 
 static uint8_t rom_read(struct gb_s *gb, const uint_fast32_t addr)
 {
-    struct litho_gb *g = (struct litho_gb *)gb->direct.priv;
+    struct hs_gb *g = (struct hs_gb *)gb->direct.priv;
 
     if (addr >= g->rom_size) {
         return 0xFF;
@@ -76,7 +76,7 @@ static uint8_t rom_read(struct gb_s *gb, const uint_fast32_t addr)
 
 static uint8_t cart_ram_read(struct gb_s *gb, const uint_fast32_t addr)
 {
-    struct litho_gb *g = (struct litho_gb *)gb->direct.priv;
+    struct hs_gb *g = (struct hs_gb *)gb->direct.priv;
 
     if (g->cart_ram == NULL || addr >= g->cart_ram_size) {
         return 0xFF;
@@ -86,7 +86,7 @@ static uint8_t cart_ram_read(struct gb_s *gb, const uint_fast32_t addr)
 
 static void cart_ram_write(struct gb_s *gb, const uint_fast32_t addr, const uint8_t val)
 {
-    struct litho_gb *g = (struct litho_gb *)gb->direct.priv;
+    struct hs_gb *g = (struct hs_gb *)gb->direct.priv;
 
     if (g->cart_ram == NULL || addr >= g->cart_ram_size) {
         return;
@@ -103,25 +103,25 @@ static void gb_err(struct gb_s *gb, const enum gb_error_e err, const uint16_t ad
 
 static void lcd_line(struct gb_s *gb, const uint8_t *pixels, const uint_fast8_t line)
 {
-    struct litho_gb *g = (struct litho_gb *)gb->direct.priv;
+    struct hs_gb *g = (struct hs_gb *)gb->direct.priv;
     int x;
 
-    if (line >= LITHO_GB_H) {
+    if (line >= HS_GB_H) {
         return;
     }
-    for (x = 0; x < LITHO_GB_W; x++) {
+    for (x = 0; x < HS_GB_W; x++) {
         g->fb[line][x] = (uint8_t)(pixels[x] & 0x03u);
     }
 }
 
-static uint64_t crc_frame(const struct litho_gb *g)
+static uint64_t crc_frame(const struct hs_gb *g)
 {
     uint64_t h = 0xcbf29ce484222325ull;
     int y, x;
 
-    for (y = 0; y < LITHO_GB_H; y++) {
-        for (x = 0; x < LITHO_GB_W; x++) {
-            h = litho_fnv1a64(h, g->fb[y][x]);
+    for (y = 0; y < HS_GB_H; y++) {
+        for (x = 0; x < HS_GB_W; x++) {
+            h = hs_fnv1a64(h, g->fb[y][x]);
         }
     }
     return h;
@@ -133,12 +133,12 @@ static uint64_t crc_audio(const int16_t *pcm, unsigned n)
     unsigned i;
 
     for (i = 0; i < n; i++) {
-        h = litho_fnv1a64(h, (uint16_t)pcm[i]);
+        h = hs_fnv1a64(h, (uint16_t)pcm[i]);
     }
     return h;
 }
 
-static void apply_joy(struct litho_gb *g)
+static void apply_joy(struct hs_gb *g)
 {
     /* Peanut-GB: 0 bit = pressed. */
     g->gb.direct.joypad = (uint8_t)(0xFFu ^ g->joy_held);
@@ -147,31 +147,31 @@ static void apply_joy(struct litho_gb *g)
 static uint64_t work_serial(uint64_t phase, uint64_t cycle, void *user)
 {
     (void)user;
-    return litho_fnv1a64(0xcbf29ce484222325ull, phase ^ (cycle << 8) ^ 0xA11ull);
+    return hs_fnv1a64(0xcbf29ce484222325ull, phase ^ (cycle << 8) ^ 0xA11ull);
 }
 
 static uint64_t work_sha_a(uint64_t phase, uint64_t cycle, void *user)
 {
     (void)user;
-    return litho_fnv1a64(0xcbf29ce484222325ull, phase + cycle * 3ull + 0xA0ull);
+    return hs_fnv1a64(0xcbf29ce484222325ull, phase + cycle * 3ull + 0xA0ull);
 }
 
 static uint64_t work_sha_b(uint64_t phase, uint64_t cycle, void *user)
 {
     (void)user;
-    return litho_fnv1a64(0xcbf29ce484222325ull, (phase << 3) ^ cycle ^ 0xB0ull);
+    return hs_fnv1a64(0xcbf29ce484222325ull, (phase << 3) ^ cycle ^ 0xB0ull);
 }
 
 static uint64_t work_gb(uint64_t phase, uint64_t cycle, void *user)
 {
-    struct litho_gb *g = (struct litho_gb *)user;
+    struct hs_gb *g = (struct hs_gb *)user;
     uint32_t ready;
     uint64_t ev;
 
     /* Control coupling: events were stamped (seq, tick) in PRE (scripted
        before start, or evdev in a later host). Apply those whose tick
        has matured for this PHASE — one GB frame per handshake phase. */
-    ev = litho_hs_apply_matured(&g->hs, phase);
+    ev = hs_hs_apply_matured(&g->hs, phase);
     (void)ev;
     (void)cycle;
     {
@@ -195,25 +195,25 @@ static uint64_t work_gb(uint64_t phase, uint64_t cycle, void *user)
     atomic_store_explicit(&g->pcm_ready, 1, memory_order_release);
 
     g->frame_crc = crc_frame(g);
-    g->audio_crc = crc_audio(g->pcm, AUDIO_SAMPLES_TOTAL <= LITHO_GB_PCM_MAX
+    g->audio_crc = crc_audio(g->pcm, AUDIO_SAMPLES_TOTAL <= HS_GB_PCM_MAX
                                        ? AUDIO_SAMPLES_TOTAL
-                                       : LITHO_GB_PCM_MAX);
+                                       : HS_GB_PCM_MAX);
     g->frames_done++;
 
     /* Consume the snapshot in the same phase (CRC is the consumer). */
     atomic_store_explicit(&g->pcm_ready, 0, memory_order_release);
-    return litho_fnv1a64(g->frame_crc, g->audio_crc);
+    return hs_fnv1a64(g->frame_crc, g->audio_crc);
 }
 
 static uint64_t work_ctrl(uint64_t phase, uint64_t cycle, void *user)
 {
     (void)user;
-    return litho_fnv1a64(0xcbf29ce484222325ull, phase + 0xC0u + cycle);
+    return hs_fnv1a64(0xcbf29ce484222325ull, phase + 0xC0u + cycle);
 }
 
-struct litho_gb *litho_gb_create(void)
+struct hs_gb *hs_gb_create(void)
 {
-    struct litho_gb *g = (struct litho_gb *)calloc(1, sizeof(*g));
+    struct hs_gb *g = (struct hs_gb *)calloc(1, sizeof(*g));
 
     if (g == NULL) {
         return NULL;
@@ -224,18 +224,18 @@ struct litho_gb *litho_gb_create(void)
     return g;
 }
 
-void litho_gb_destroy(struct litho_gb *g)
+void hs_gb_destroy(struct hs_gb *g)
 {
     if (g == NULL) {
         return;
     }
-    litho_gb_stop(g);
+    hs_gb_stop(g);
     free(g->rom);
     free(g->cart_ram);
     free(g);
 }
 
-int litho_gb_load_rom_mem(struct litho_gb *g, const uint8_t *data, size_t len)
+int hs_gb_load_rom_mem(struct hs_gb *g, const uint8_t *data, size_t len)
 {
     enum gb_init_error_e err;
     size_t ram;
@@ -272,7 +272,7 @@ int litho_gb_load_rom_mem(struct litho_gb *g, const uint8_t *data, size_t len)
     return 0;
 }
 
-int litho_gb_load_rom(struct litho_gb *g, const char *path)
+int hs_gb_load_rom(struct hs_gb *g, const char *path)
 {
     FILE *fp;
     uint8_t *buf;
@@ -302,20 +302,20 @@ int litho_gb_load_rom(struct litho_gb *g, const char *path)
         return -EIO;
     }
     fclose(fp);
-    rc = litho_gb_load_rom_mem(g, buf, (size_t)n);
+    rc = hs_gb_load_rom_mem(g, buf, (size_t)n);
     free(buf);
     return rc;
 }
 
-int litho_gb_script(struct litho_gb *g, uint64_t tick, uint8_t joy_mask)
+int hs_gb_script(struct hs_gb *g, uint64_t tick, uint8_t joy_mask)
 {
     if (g == NULL) {
         return -EINVAL;
     }
     if (g->started) {
-        return litho_hs_post_event(&g->hs, tick, joy_mask, joy_mask);
+        return hs_hs_post_event(&g->hs, tick, joy_mask, joy_mask);
     }
-    if (g->n_script >= LITHO_GB_SCRIPT_MAX) {
+    if (g->n_script >= HS_GB_SCRIPT_MAX) {
         return -ENOMEM;
     }
     g->script[g->n_script].tick = tick;
@@ -324,15 +324,15 @@ int litho_gb_script(struct litho_gb *g, uint64_t tick, uint8_t joy_mask)
     return 0;
 }
 
-int litho_gb_start(struct litho_gb *g, int workers)
+int hs_gb_start(struct hs_gb *g, int workers)
 {
-    struct litho_hs_config cfg;
-    struct litho_hs_comp_desc d;
+    struct hs_hs_config cfg;
+    struct hs_hs_comp_desc d;
 
     if (g == NULL || g->rom == NULL) {
         return -EINVAL;
     }
-    litho_hs_default_config(&cfg);
+    hs_hs_default_config(&cfg);
     cfg.worker_threads = workers;
     cfg.phases_per_cycle = 4;
     /* Scoreboard measures determinism, not wall-clock 60 Hz. Give
@@ -340,79 +340,79 @@ int litho_gb_start(struct litho_gb *g, int workers)
     cfg.phase_budget_ns = 2000000000ull;      /* 2 s */
     cfg.watchdog_ceiling_ns = 5000000000ull;  /* 5 s */
     cfg.ledger = true;
-    if (litho_hs_init(&g->hs, &cfg) != 0) {
+    if (hs_hs_init(&g->hs, &cfg) != 0) {
         return -1;
     }
 
     memset(&d, 0, sizeof(d));
     d.name = "serial";
-    d.cadence = LITHO_CADENCE_EVERY_PHASE;
+    d.cadence = HS_CADENCE_EVERY_PHASE;
     d.tick_critical = true;
-    if (litho_hs_register(&g->hs, &d, work_serial, g) == UINT32_MAX) {
+    if (hs_hs_register(&g->hs, &d, work_serial, g) == UINT32_MAX) {
         return -1;
     }
 
     memset(&d, 0, sizeof(d));
     d.name = "control";
-    d.cadence = LITHO_CADENCE_EVERY_PHASE;
+    d.cadence = HS_CADENCE_EVERY_PHASE;
     d.affine = true;
     d.tick_critical = true;
-    if (litho_hs_register(&g->hs, &d, work_ctrl, g) == UINT32_MAX) {
+    if (hs_hs_register(&g->hs, &d, work_ctrl, g) == UINT32_MAX) {
         return -1;
     }
 
     memset(&d, 0, sizeof(d));
     d.name = "gb-step";
-    d.cadence = LITHO_CADENCE_EVERY_PHASE;
+    d.cadence = HS_CADENCE_EVERY_PHASE;
     d.affine = true;
     d.tick_critical = true;
-    if (litho_hs_register(&g->hs, &d, work_gb, g) == UINT32_MAX) {
+    if (hs_hs_register(&g->hs, &d, work_gb, g) == UINT32_MAX) {
         return -1;
     }
 
     memset(&d, 0, sizeof(d));
     d.name = "worker-a";
-    d.cadence = LITHO_CADENCE_EVERY_PHASE;
+    d.cadence = HS_CADENCE_EVERY_PHASE;
     d.tick_critical = true;
-    if (litho_hs_register(&g->hs, &d, work_sha_a, g) == UINT32_MAX) {
+    if (hs_hs_register(&g->hs, &d, work_sha_a, g) == UINT32_MAX) {
         return -1;
     }
 
     memset(&d, 0, sizeof(d));
     d.name = "worker-b";
-    d.cadence = LITHO_CADENCE_HALF_CYCLE;
+    d.cadence = HS_CADENCE_HALF_CYCLE;
     d.tick_critical = true;
-    if (litho_hs_register(&g->hs, &d, work_sha_b, g) == UINT32_MAX) {
+    if (hs_hs_register(&g->hs, &d, work_sha_b, g) == UINT32_MAX) {
         return -1;
     }
 
     {
         uint32_t i;
         for (i = 0; i < g->n_script; i++) {
-            if (litho_hs_post_event(&g->hs, g->script[i].tick,
+            if (hs_hs_post_event(&g->hs, g->script[i].tick,
                                     g->script[i].mask, g->script[i].mask) != 0) {
-                litho_hs_fini(&g->hs);
+                hs_hs_fini(&g->hs);
                 return -1;
             }
         }
     }
-    if (litho_hs_start(&g->hs) != 0) {
+    if (hs_hs_start(&g->hs) != 0) {
         return -1;
     }
     g->started = 1;
     return 0;
 }
 
-void litho_gb_stop(struct litho_gb *g)
+void hs_gb_stop(struct hs_gb *g)
 {
     if (g == NULL || !g->started) {
         return;
     }
-    litho_hs_stop(&g->hs);
+    hs_hs_stop(&g->hs);
     g->started = 0;
 }
 
-int litho_gb_run_frames(struct litho_gb *g, uint64_t frames)
+int hs_gb_run_frames(struct hs_gb *g, uint64_t frames)
 {
     uint64_t i;
     int ppc = 4;
@@ -421,7 +421,7 @@ int litho_gb_run_frames(struct litho_gb *g, uint64_t frames)
         return -EINVAL;
     }
     for (i = 0; i < frames; i++) {
-        if (!litho_hs_run_phase(&g->hs, i, i / (uint64_t)ppc, 0)) {
+        if (!hs_hs_run_phase(&g->hs, i, i / (uint64_t)ppc, 0)) {
             return -EIO;
         }
         /* After commit, fold this frame's CRCs into the ledger again so
@@ -431,9 +431,9 @@ int litho_gb_run_frames(struct litho_gb *g, uint64_t frames)
     return 0;
 }
 
-void litho_gb_stats(const struct litho_gb *g, struct litho_gb_stats *out)
+void hs_gb_stats(const struct hs_gb *g, struct hs_gb_stats *out)
 {
-    struct litho_hs_stats hs;
+    struct hs_hs_stats hs;
 
     if (out == NULL) {
         return;
@@ -442,80 +442,80 @@ void litho_gb_stats(const struct litho_gb *g, struct litho_gb_stats *out)
     if (g == NULL) {
         return;
     }
-    litho_hs_stats(&g->hs, &hs);
+    hs_hs_stats(&g->hs, &hs);
     out->frames = g->frames_done;
-    out->ledger_hash = litho_hs_ledger_hash(&g->hs);
+    out->ledger_hash = hs_hs_ledger_hash(&g->hs);
     out->frame_crc = g->frame_crc;
     out->audio_crc = g->audio_crc;
-    out->epoch = litho_hs_commit_epoch(&g->hs);
-    out->monatomic = litho_hs_monatomic(&g->hs);
+    out->epoch = hs_hs_commit_epoch(&g->hs);
+    out->monatomic = hs_hs_monatomic(&g->hs);
     out->xruns = atomic_load_explicit(&g->xruns, memory_order_relaxed);
     out->overruns = hs.overrun_phases;
     out->phases = hs.phases;
 }
 
-const uint8_t *litho_gb_framebuffer(const struct litho_gb *g)
+const uint8_t *hs_gb_framebuffer(const struct hs_gb *g)
 {
     return g ? &g->fb[0][0] : NULL;
 }
 
-uint64_t litho_gb_ledger_hash(const struct litho_gb *g)
+uint64_t hs_gb_ledger_hash(const struct hs_gb *g)
 {
-    return g ? litho_hs_ledger_hash(&g->hs) : 0;
+    return g ? hs_hs_ledger_hash(&g->hs) : 0;
 }
 
-uint64_t litho_gb_xruns(const struct litho_gb *g)
+uint64_t hs_gb_xruns(const struct hs_gb *g)
 {
     return g ? atomic_load_explicit(&g->xruns, memory_order_relaxed) : 0;
 }
 
-int litho_gb_scoreboard(const char *rom_path, int workers, uint64_t frames,
-                        struct litho_gb_stats *out)
+int hs_gb_scoreboard(const char *rom_path, int workers, uint64_t frames,
+                        struct hs_gb_stats *out)
 {
-    struct litho_gb *g;
+    struct hs_gb *g;
     int rc;
     uint64_t t;
 
     if (frames == 0) {
         frames = 90;
     }
-    g = litho_gb_create();
+    g = hs_gb_create();
     if (g == NULL) {
         return -ENOMEM;
     }
-    rc = litho_gb_load_rom(g, rom_path);
+    rc = hs_gb_load_rom(g, rom_path);
     if (rc != 0) {
-        litho_gb_destroy(g);
+        hs_gb_destroy(g);
         return rc;
     }
     /* Default script: after the title settles, hold right, then A (beep). */
-    (void)litho_gb_script(g, 0, 0);
+    (void)hs_gb_script(g, 0, 0);
     for (t = 20; t < 40; t++) {
-        (void)litho_gb_script(g, t, 0x10); /* JOYPAD_RIGHT */
+        (void)hs_gb_script(g, t, 0x10); /* JOYPAD_RIGHT */
     }
     for (t = 40; t < 60; t++) {
-        (void)litho_gb_script(g, t, 0x10 | 0x01); /* right + A */
+        (void)hs_gb_script(g, t, 0x10 | 0x01); /* right + A */
     }
     for (t = 60; t < frames; t++) {
-        (void)litho_gb_script(g, t, 0x80); /* down */
+        (void)hs_gb_script(g, t, 0x80); /* down */
     }
 
-    rc = litho_gb_start(g, workers);
+    rc = hs_gb_start(g, workers);
     if (rc != 0) {
-        litho_gb_destroy(g);
+        hs_gb_destroy(g);
         return rc;
     }
-    rc = litho_gb_run_frames(g, frames);
+    rc = hs_gb_run_frames(g, frames);
     if (rc == 0 && out != NULL) {
-        litho_gb_stats(g, out);
+        hs_gb_stats(g, out);
     }
-    litho_gb_stop(g);
-    litho_gb_destroy(g);
+    hs_gb_stop(g);
+    hs_gb_destroy(g);
     return rc;
 }
 
 
-void litho_gb_blit(struct litho_fb *fb, int x, int y, int scale,
+void hs_gb_blit(struct hs_fb *fb, int x, int y, int scale,
                    const uint8_t *fb160, const uint32_t pal[4])
 {
     int sx, sy, px, py, i, j;
@@ -524,17 +524,17 @@ void litho_gb_blit(struct litho_fb *fb, int x, int y, int scale,
     if (fb == NULL || fb160 == NULL || pal == NULL || scale < 1) {
         return;
     }
-    for (sy = 0; sy < LITHO_GB_H; sy++) {
-        for (sx = 0; sx < LITHO_GB_W; sx++) {
-            shade = fb160[sy * LITHO_GB_W + sx] & 0x03u;
+    for (sy = 0; sy < HS_GB_H; sy++) {
+        for (sx = 0; sx < HS_GB_W; sx++) {
+            shade = fb160[sy * HS_GB_W + sx] & 0x03u;
             for (j = 0; j < scale; j++) {
                 py = y + sy * scale + j;
                 for (i = 0; i < scale; i++) {
                     px = x + sx * scale + i;
-                    litho_fb_fill(fb, px, py, 1, 1, pal[shade]);
+                    hs_fb_fill(fb, px, py, 1, 1, pal[shade]);
                 }
             }
         }
     }
-    litho_fb_rect(fb, x - 2, y - 2, LITHO_GB_W * scale + 4, LITHO_GB_H * scale + 4, 2, pal[2]);
+    hs_fb_rect(fb, x - 2, y - 2, HS_GB_W * scale + 4, HS_GB_H * scale + 4, 2, pal[2]);
 }

@@ -2,7 +2,7 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
-#include "litho_handshake.h"
+#include "hs_handshake.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -23,17 +23,17 @@ static const char *const k_beat_names[] = {
     "idle", "publish", "pull", "barrier", "commit"
 };
 
-static const char *const k_hist_labels[LITHO_HS_HIST_BINS] = {
+static const char *const k_hist_labels[HS_HS_HIST_BINS] = {
     "<1us", "1-2us", "2-5us", "5-10us", "10-20us", "20-50us",
     "50-100us", "100-200us", "200-500us", "500us-1ms", "1-2ms", ">=2ms"
 };
 
-static const int64_t k_hist_bound[LITHO_HS_HIST_BINS] = {
+static const int64_t k_hist_bound[HS_HS_HIST_BINS] = {
     1000, 2000, 5000, 10000, 20000, 50000,
     100000, 200000, 500000, 1000000, 2000000, INT64_MAX
 };
 
-uint64_t litho_now_ns(void)
+uint64_t hs_now_ns(void)
 {
     struct timespec ts;
 
@@ -43,7 +43,7 @@ uint64_t litho_now_ns(void)
     return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
 }
 
-uint64_t litho_fnv1a64(uint64_t hash, uint64_t word)
+uint64_t hs_fnv1a64(uint64_t hash, uint64_t word)
 {
     unsigned i;
 
@@ -57,7 +57,7 @@ uint64_t litho_fnv1a64(uint64_t hash, uint64_t word)
     return hash;
 }
 
-const char *litho_beat_name(litho_beat_t beat)
+const char *hs_beat_name(hs_beat_t beat)
 {
     if ((unsigned)beat >= (unsigned)(sizeof(k_beat_names) / sizeof(k_beat_names[0]))) {
         return "unknown";
@@ -65,15 +65,15 @@ const char *litho_beat_name(litho_beat_t beat)
     return k_beat_names[beat];
 }
 
-const char *litho_hist_bin_label(unsigned bin)
+const char *hs_hist_bin_label(unsigned bin)
 {
-    if (bin >= LITHO_HS_HIST_BINS) {
+    if (bin >= HS_HS_HIST_BINS) {
         return "?";
     }
     return k_hist_labels[bin];
 }
 
-void litho_hs_default_config(struct litho_hs_config *cfg)
+void hs_hs_default_config(struct hs_hs_config *cfg)
 {
     if (cfg == NULL) {
         return;
@@ -82,7 +82,7 @@ void litho_hs_default_config(struct litho_hs_config *cfg)
     cfg->phases_per_cycle = 4;
     cfg->worker_threads = 3;
     cfg->phase_budget_ns = 0;
-    cfg->watchdog_ceiling_ns = LITHO_HS_DEFAULT_CEILING_NS;
+    cfg->watchdog_ceiling_ns = HS_HS_DEFAULT_CEILING_NS;
     cfg->offender_threshold = 3;
     cfg->ledger = true;
 }
@@ -106,14 +106,14 @@ static void futex_wake(_Atomic uint32_t *word, int n)
     (void)syscall(SYS_futex, word, FUTEX_WAKE_PRIVATE, n, NULL, NULL, 0);
 }
 
-static void set_beat(struct litho_hs *hs, litho_beat_t beat)
+static void set_beat(struct hs_hs *hs, hs_beat_t beat)
 {
     atomic_store_explicit(&hs->beat, (uint32_t)beat, memory_order_release);
 }
 
-int litho_hs_init(struct litho_hs *hs, const struct litho_hs_config *cfg)
+int hs_hs_init(struct hs_hs *hs, const struct hs_hs_config *cfg)
 {
-    struct litho_hs_config def;
+    struct hs_hs_config def;
     int workers;
 
     if (hs == NULL) {
@@ -121,7 +121,7 @@ int litho_hs_init(struct litho_hs *hs, const struct litho_hs_config *cfg)
     }
     memset(hs, 0, sizeof(*hs));
     if (cfg == NULL) {
-        litho_hs_default_config(&def);
+        hs_hs_default_config(&def);
         cfg = &def;
     }
     hs->cfg = *cfg;
@@ -132,20 +132,20 @@ int litho_hs_init(struct litho_hs *hs, const struct litho_hs_config *cfg)
     if (workers <= 0) {
         workers = 3;
     }
-    if (workers > LITHO_HS_MAX_WORKERS) {
-        workers = LITHO_HS_MAX_WORKERS;
+    if (workers > HS_HS_MAX_WORKERS) {
+        workers = HS_HS_MAX_WORKERS;
     }
     hs->worker_count = workers;
     hs->ceiling_ns = hs->cfg.watchdog_ceiling_ns;
     if (hs->ceiling_ns == 0) {
-        hs->ceiling_ns = LITHO_HS_DEFAULT_CEILING_NS;
+        hs->ceiling_ns = HS_HS_DEFAULT_CEILING_NS;
     }
     if (hs->cfg.offender_threshold == 0) {
         hs->cfg.offender_threshold = 3;
     }
     atomic_init(&hs->pub_seq, 0);
     atomic_init(&hs->generation, 1);
-    atomic_init(&hs->beat, LITHO_BEAT_IDLE);
+    atomic_init(&hs->beat, HS_BEAT_IDLE);
     atomic_init(&hs->frozen, 0);
     atomic_init(&hs->commit_epoch, 0);
     atomic_init(&hs->ledger_hash, 0xcbf29ce484222325ull);
@@ -158,27 +158,27 @@ int litho_hs_init(struct litho_hs *hs, const struct litho_hs_config *cfg)
     return 0;
 }
 
-void litho_hs_fini(struct litho_hs *hs)
+void hs_hs_fini(struct hs_hs *hs)
 {
     if (hs == NULL) {
         return;
     }
-    litho_hs_stop(hs);
+    hs_hs_stop(hs);
     memset(hs, 0, sizeof(*hs));
 }
 
-uint32_t litho_hs_register(struct litho_hs *hs,
-                           const struct litho_hs_comp_desc *desc,
-                           litho_hs_work_fn fn, void *user)
+uint32_t hs_hs_register(struct hs_hs *hs,
+                           const struct hs_hs_comp_desc *desc,
+                           hs_hs_work_fn fn, void *user)
 {
-    struct litho_hs_slot *s;
+    struct hs_hs_slot *s;
     uint32_t id;
     int n_pull;
 
     if (hs == NULL || desc == NULL || fn == NULL || hs->running) {
         return UINT32_MAX;
     }
-    if (hs->n_comps >= LITHO_HS_MAX_COMPS) {
+    if (hs->n_comps >= HS_HS_MAX_COMPS) {
         return UINT32_MAX;
     }
     id = (uint32_t)hs->n_comps;
@@ -189,7 +189,7 @@ uint32_t litho_hs_register(struct litho_hs *hs,
     s->user = user;
     s->id = id;
     if (desc->name != NULL && desc->name[0] != '\0') {
-        strncpy(s->name, desc->name, LITHO_HS_NAME_MAX - 1);
+        strncpy(s->name, desc->name, HS_HS_NAME_MAX - 1);
     } else {
         snprintf(s->name, sizeof(s->name), "unnamed-%u", id);
     }
@@ -212,7 +212,7 @@ uint32_t litho_hs_register(struct litho_hs *hs,
     return id;
 }
 
-static void assign_shards(struct litho_hs *hs)
+static void assign_shards(struct hs_hs *hs)
 {
     int i;
     int next = 0;
@@ -227,7 +227,7 @@ static void assign_shards(struct litho_hs *hs)
     }
 }
 
-static bool due_for(const struct litho_hs *hs, const struct litho_hs_slot *c,
+static bool due_for(const struct hs_hs *hs, const struct hs_hs_slot *c,
                     uint64_t phase, uint64_t cycle, uint32_t group)
 {
     uint32_t divider;
@@ -235,7 +235,7 @@ static bool due_for(const struct litho_hs *hs, const struct litho_hs_slot *c,
     int ppc;
 
     (void)cycle;
-    if (c->desc.group != 0 && group != LITHO_HS_ALL_GROUPS && c->desc.group != group) {
+    if (c->desc.group != 0 && group != HS_HS_ALL_GROUPS && c->desc.group != group) {
         return false;
     }
     ppc = hs->cfg.phases_per_cycle;
@@ -244,22 +244,22 @@ static bool due_for(const struct litho_hs *hs, const struct litho_hs_slot *c,
         return (phase % (uint64_t)divider) == (uint64_t)c->desc.phase_offset;
     }
     switch (c->desc.cadence) {
-    case LITHO_CADENCE_EVERY_PHASE:
+    case HS_CADENCE_EVERY_PHASE:
         return true;
-    case LITHO_CADENCE_HALF_CYCLE:
+    case HS_CADENCE_HALF_CYCLE:
         half = (uint32_t)ppc / 2u;
         if (half < 1u) {
             half = 1u;
         }
         return (phase % (uint64_t)half) == (uint64_t)c->desc.phase_offset;
-    case LITHO_CADENCE_CYCLE_HEAD:
+    case HS_CADENCE_CYCLE_HEAD:
         return (phase % (uint64_t)ppc) == (uint64_t)c->desc.phase_offset;
     default:
         return false;
     }
 }
 
-static bool shard_has_due(const struct litho_hs *hs, uint32_t shard,
+static bool shard_has_due(const struct hs_hs *hs, uint32_t shard,
                           uint64_t phase, uint64_t cycle, uint32_t group)
 {
     int i;
@@ -273,7 +273,7 @@ static bool shard_has_due(const struct litho_hs *hs, uint32_t shard,
     return false;
 }
 
-static bool read_published(const struct litho_hs *hs, struct litho_published *out)
+static bool read_published(const struct hs_hs *hs, struct hs_published *out)
 {
     uint64_t s1, s2;
 
@@ -293,8 +293,8 @@ static bool read_published(const struct litho_hs *hs, struct litho_published *ou
     return s1 != 0 && s1 == s2;
 }
 
-bool litho_hs_poll_phase(const struct litho_hs *hs, uint32_t shard,
-                         uint64_t seen_seq, struct litho_published *out)
+bool hs_hs_poll_phase(const struct hs_hs *hs, uint32_t shard,
+                         uint64_t seen_seq, struct hs_published *out)
 {
     if (hs == NULL || out == NULL) {
         return false;
@@ -312,16 +312,16 @@ bool litho_hs_poll_phase(const struct litho_hs *hs, uint32_t shard,
     return true;
 }
 
-bool litho_hs_can_tick(const struct litho_hs *hs, uint32_t shard, uint64_t *phase_out)
+bool hs_hs_can_tick(const struct hs_hs *hs, uint32_t shard, uint64_t *phase_out)
 {
-    struct litho_published snap;
+    struct hs_published snap;
     uint64_t seen;
 
     if (hs == NULL) {
         return false;
     }
-    seen = (shard < LITHO_HS_MAX_WORKERS) ? hs->shard_seen[shard] : 0;
-    if (!litho_hs_poll_phase(hs, shard, seen, &snap)) {
+    seen = (shard < HS_HS_MAX_WORKERS) ? hs->shard_seen[shard] : 0;
+    if (!hs_hs_poll_phase(hs, shard, seen, &snap)) {
         return false;
     }
     if (!snap.due_work) {
@@ -333,7 +333,7 @@ bool litho_hs_can_tick(const struct litho_hs *hs, uint32_t shard, uint64_t *phas
     return true;
 }
 
-static uint64_t run_item(struct litho_hs *hs, struct litho_hs_slot *c,
+static uint64_t run_item(struct hs_hs *hs, struct hs_hs_slot *c,
                          uint64_t phase, uint64_t cycle, uint64_t generation)
 {
     uint64_t t0, t1, note, live;
@@ -343,10 +343,10 @@ static uint64_t run_item(struct litho_hs *hs, struct litho_hs_slot *c,
         return 0;
     }
     atomic_store_explicit(&c->started, 1, memory_order_release);
-    t0 = litho_now_ns();
+    t0 = hs_now_ns();
     atomic_store_explicit(&c->start_stamp_ns, t0, memory_order_release);
     note = c->fn(phase, cycle, c->user);
-    t1 = litho_now_ns();
+    t1 = hs_now_ns();
     live = atomic_load_explicit(&hs->generation, memory_order_acquire);
     if (live != generation) {
         return 0;
@@ -358,7 +358,7 @@ static uint64_t run_item(struct litho_hs *hs, struct litho_hs_slot *c,
     return note;
 }
 
-static void serve_shard(struct litho_hs *hs, uint32_t shard, const struct litho_published *snap)
+static void serve_shard(struct hs_hs *hs, uint32_t shard, const struct hs_published *snap)
 {
     int i;
 
@@ -376,7 +376,7 @@ static void serve_shard(struct litho_hs *hs, uint32_t shard, const struct litho_
     }
 }
 
-static void arrive(struct litho_hs *hs, const struct litho_published *snap)
+static void arrive(struct hs_hs *hs, const struct hs_published *snap)
 {
     uint32_t n;
     uint32_t exp;
@@ -396,28 +396,28 @@ static void arrive(struct litho_hs *hs, const struct litho_published *snap)
 }
 
 typedef struct {
-    struct litho_hs *hs;
+    struct hs_hs *hs;
     uint32_t shard;
-} litho_boot_t;
+} hs_boot_t;
 
 static void *worker_main(void *arg)
 {
-    litho_boot_t *boot = (litho_boot_t *)arg;
-    struct litho_hs *hs = boot->hs;
+    hs_boot_t *boot = (hs_boot_t *)arg;
+    struct hs_hs *hs = boot->hs;
     uint32_t shard = boot->shard;
     uint64_t seen = 0;
-    struct litho_published snap;
+    struct hs_published snap;
     uint32_t word;
 
     while (!hs->stop) {
-        if (litho_hs_poll_phase(hs, shard, seen, &snap)) {
-            set_beat(hs, LITHO_BEAT_PULL);
+        if (hs_hs_poll_phase(hs, shard, seen, &snap)) {
+            set_beat(hs, HS_BEAT_PULL);
             if (snap.due_work) {
                 serve_shard(hs, shard, &snap);
             }
             arrive(hs, &snap);
             seen = snap.seq;
-            if (shard < LITHO_HS_MAX_WORKERS) {
+            if (shard < HS_HS_MAX_WORKERS) {
                 hs->shard_seen[shard] = seen;
             }
             continue;
@@ -431,7 +431,7 @@ static void *worker_main(void *arg)
     return NULL;
 }
 
-int litho_hs_start(struct litho_hs *hs)
+int hs_hs_start(struct hs_hs *hs)
 {
     int i;
     int rc;
@@ -463,7 +463,7 @@ int litho_hs_start(struct litho_hs *hs)
     return 0;
 }
 
-void litho_hs_stop(struct litho_hs *hs)
+void hs_hs_stop(struct hs_hs *hs)
 {
     int i;
     pthread_t th;
@@ -484,11 +484,11 @@ void litho_hs_stop(struct litho_hs *hs)
     hs->running = 0;
 }
 
-static void publish(struct litho_hs *hs, uint64_t phase, uint64_t cycle, uint32_t group, uint64_t now)
+static void publish(struct hs_hs *hs, uint64_t phase, uint64_t cycle, uint32_t group, uint64_t now)
 {
     uint64_t lock;
 
-    set_beat(hs, LITHO_BEAT_PUBLISH);
+    set_beat(hs, HS_BEAT_PUBLISH);
     lock = atomic_load_explicit(&hs->pub_seq, memory_order_relaxed);
     atomic_store_explicit(&hs->pub_seq, lock + 1, memory_order_release);
     atomic_thread_fence(memory_order_release);
@@ -504,12 +504,12 @@ static void publish(struct litho_hs *hs, uint64_t phase, uint64_t cycle, uint32_
     futex_wake(&hs->publish_word, INT_MAX);
 }
 
-static int find_offender(const struct litho_hs *hs)
+static int find_offender(const struct hs_hs *hs)
 {
     int i;
     int best = -1;
     uint64_t best_start = UINT64_MAX;
-    const struct litho_hs_slot *c;
+    const struct hs_hs_slot *c;
 
     /* Prefer a started-but-unfinished item; else the first due unfinished. */
     for (i = 0; i < hs->n_comps; i++) {
@@ -534,10 +534,10 @@ static int find_offender(const struct litho_hs *hs)
     return best;
 }
 
-static void trip_freeze(struct litho_hs *hs, uint64_t now)
+static void trip_freeze(struct hs_hs *hs, uint64_t now)
 {
     int id = find_offender(hs);
-    const struct litho_hs_slot *c;
+    const struct hs_hs_slot *c;
 
     memset(&hs->last_freeze, 0, sizeof(hs->last_freeze));
     hs->last_freeze.open_stamp_ns = hs->pub_open_stamp_ns;
@@ -549,21 +549,21 @@ static void trip_freeze(struct litho_hs *hs, uint64_t now)
     if (id >= 0) {
         c = &hs->comps[id];
         hs->last_freeze.component_id = c->id;
-        strncpy(hs->last_freeze.component_name, c->name, LITHO_HS_NAME_MAX - 1);
+        strncpy(hs->last_freeze.component_name, c->name, HS_HS_NAME_MAX - 1);
     } else {
-        strncpy(hs->last_freeze.component_name, "unknown", LITHO_HS_NAME_MAX - 1);
+        strncpy(hs->last_freeze.component_name, "unknown", HS_HS_NAME_MAX - 1);
     }
     atomic_store_explicit(&hs->frozen, 1, memory_order_release);
     hs->freeze_count++;
 }
 
-static bool wait_barrier(struct litho_hs *hs, uint64_t open_ns)
+static bool wait_barrier(struct hs_hs *hs, uint64_t open_ns)
 {
     uint32_t exp, got, word;
     uint64_t now, remain, wait0;
 
-    set_beat(hs, LITHO_BEAT_BARRIER);
-    wait0 = litho_now_ns();
+    set_beat(hs, HS_BEAT_BARRIER);
+    wait0 = hs_now_ns();
     for (;;) {
         if (atomic_load_explicit(&hs->frozen, memory_order_acquire)) {
             return false;
@@ -571,10 +571,10 @@ static bool wait_barrier(struct litho_hs *hs, uint64_t open_ns)
         exp = atomic_load_explicit(&hs->expected, memory_order_acquire);
         got = atomic_load_explicit(&hs->arrivals, memory_order_acquire);
         if (got >= exp) {
-            hs->barrier_wait_ns_total += litho_now_ns() - wait0;
+            hs->barrier_wait_ns_total += hs_now_ns() - wait0;
             return true;
         }
-        now = litho_now_ns();
+        now = hs_now_ns();
         if (now - open_ns >= hs->ceiling_ns) {
             trip_freeze(hs, now);
             /* Wake workers so they can observe the freeze and drop out. */
@@ -594,10 +594,10 @@ static bool wait_barrier(struct litho_hs *hs, uint64_t open_ns)
     }
 }
 
-static void fold_stats(struct litho_hs *hs, uint64_t wall_ns)
+static void fold_stats(struct hs_hs *hs, uint64_t wall_ns)
 {
     int i;
-    struct litho_hs_slot *c;
+    struct hs_hs_slot *c;
     uint64_t work, cycle_budget;
     uint32_t ppc = (uint32_t)hs->cfg.phases_per_cycle;
 
@@ -631,45 +631,45 @@ static void fold_stats(struct litho_hs *hs, uint64_t wall_ns)
         hs->overrun_phases++;
         hs->overrun_ns_total += wall_ns - hs->cfg.phase_budget_ns;
     }
-    if (hs->sample_count < LITHO_HS_SAMPLES_MAX) {
+    if (hs->sample_count < HS_HS_SAMPLES_MAX) {
         hs->samples[hs->sample_count++] = (int64_t)wall_ns;
     }
     hs->phases_done++;
 }
 
-static void commit_ledger(struct litho_hs *hs, uint64_t phase, uint64_t cycle, uint32_t group)
+static void commit_ledger(struct hs_hs *hs, uint64_t phase, uint64_t cycle, uint32_t group)
 {
     uint64_t h;
     uint64_t note;
     uint64_t ev;
     int i;
 
-    set_beat(hs, LITHO_BEAT_COMMIT);
-    ev = litho_hs_apply_matured(hs, cycle);
+    set_beat(hs, HS_BEAT_COMMIT);
+    ev = hs_hs_apply_matured(hs, cycle);
 
     h = atomic_load_explicit(&hs->ledger_hash, memory_order_relaxed);
     if (!hs->cfg.ledger) {
         atomic_fetch_add_explicit(&hs->commit_epoch, 1, memory_order_release);
-        set_beat(hs, LITHO_BEAT_IDLE);
+        set_beat(hs, HS_BEAT_IDLE);
         return;
     }
-    h = litho_fnv1a64(h, phase);
-    h = litho_fnv1a64(h, cycle);
-    h = litho_fnv1a64(h, group);
+    h = hs_fnv1a64(h, phase);
+    h = hs_fnv1a64(h, cycle);
+    h = hs_fnv1a64(h, group);
     for (i = 0; i < hs->n_comps; i++) {
         if (atomic_load_explicit(&hs->comps[i].finished, memory_order_acquire)) {
             note = atomic_load_explicit(&hs->comps[i].note, memory_order_acquire);
-            h = litho_fnv1a64(h, (uint64_t)hs->comps[i].id);
-            h = litho_fnv1a64(h, note);
+            h = hs_fnv1a64(h, (uint64_t)hs->comps[i].id);
+            h = hs_fnv1a64(h, note);
         }
     }
-    h = litho_fnv1a64(h, ev);
+    h = hs_fnv1a64(h, ev);
     atomic_store_explicit(&hs->ledger_hash, h, memory_order_release);
     atomic_fetch_add_explicit(&hs->commit_epoch, 1, memory_order_release);
-    set_beat(hs, LITHO_BEAT_IDLE);
+    set_beat(hs, HS_BEAT_IDLE);
 }
 
-static void clear_phase_scratch(struct litho_hs *hs)
+static void clear_phase_scratch(struct hs_hs *hs)
 {
     int i;
 
@@ -682,7 +682,7 @@ static void clear_phase_scratch(struct litho_hs *hs)
     }
 }
 
-bool litho_hs_run_phase(struct litho_hs *hs, uint64_t phase, uint64_t cycle, uint32_t group)
+bool hs_hs_run_phase(struct hs_hs *hs, uint64_t phase, uint64_t cycle, uint32_t group)
 {
     uint64_t now;
     uint64_t wall;
@@ -700,7 +700,7 @@ bool litho_hs_run_phase(struct litho_hs *hs, uint64_t phase, uint64_t cycle, uin
     atomic_store_explicit(&hs->expected, (uint32_t)hs->worker_count, memory_order_release);
     atomic_store_explicit(&hs->barrier_word, 0, memory_order_relaxed);
 
-    now = litho_now_ns();
+    now = hs_now_ns();
     publish(hs, phase, cycle, group, now);
 
     /* Affine (clock-thread) due items run in the published window. */
@@ -715,19 +715,19 @@ bool litho_hs_run_phase(struct litho_hs *hs, uint64_t phase, uint64_t cycle, uin
                        atomic_load_explicit(&hs->generation, memory_order_relaxed));
     }
 
-    set_beat(hs, LITHO_BEAT_PULL);
+    set_beat(hs, HS_BEAT_PULL);
     if (!wait_barrier(hs, now)) {
         return false;
     }
 
-    wall = litho_now_ns() - now;
+    wall = hs_now_ns() - now;
     /* WAIT: we got here because every shard arrived. Nothing was skipped. */
     fold_stats(hs, wall);
     commit_ledger(hs, phase, cycle, group);
     return true;
 }
 
-bool litho_hs_frozen(const struct litho_hs *hs)
+bool hs_hs_frozen(const struct hs_hs *hs)
 {
     if (hs == NULL) {
         return false;
@@ -735,7 +735,7 @@ bool litho_hs_frozen(const struct litho_hs *hs)
     return atomic_load_explicit(&hs->frozen, memory_order_acquire) != 0;
 }
 
-void litho_hs_last_freeze(const struct litho_hs *hs, struct litho_freeze *out)
+void hs_hs_last_freeze(const struct hs_hs *hs, struct hs_freeze *out)
 {
     if (out == NULL) {
         return;
@@ -747,7 +747,7 @@ void litho_hs_last_freeze(const struct litho_hs *hs, struct litho_freeze *out)
     *out = hs->last_freeze;
 }
 
-void litho_hs_reset_after_freeze(struct litho_hs *hs)
+void hs_hs_reset_after_freeze(struct hs_hs *hs)
 {
     if (hs == NULL) {
         return;
@@ -763,39 +763,39 @@ void litho_hs_reset_after_freeze(struct litho_hs *hs)
     futex_wake(&hs->barrier_word, INT_MAX);
 }
 
-uint64_t litho_hs_commit_epoch(const struct litho_hs *hs)
+uint64_t hs_hs_commit_epoch(const struct hs_hs *hs)
 {
     return hs ? atomic_load_explicit(&hs->commit_epoch, memory_order_acquire) : 0;
 }
 
-uint64_t litho_hs_ledger_hash(const struct litho_hs *hs)
+uint64_t hs_hs_ledger_hash(const struct hs_hs *hs)
 {
     return hs ? atomic_load_explicit(&hs->ledger_hash, memory_order_acquire) : 0;
 }
 
-uint64_t litho_hs_monatomic(const struct litho_hs *hs)
+uint64_t hs_hs_monatomic(const struct hs_hs *hs)
 {
     return hs ? atomic_load_explicit(&hs->monatomic, memory_order_acquire) : 0;
 }
 
-litho_beat_t litho_hs_beat(const struct litho_hs *hs)
+hs_beat_t hs_hs_beat(const struct hs_hs *hs)
 {
     if (hs == NULL) {
-        return LITHO_BEAT_IDLE;
+        return HS_BEAT_IDLE;
     }
-    return (litho_beat_t)atomic_load_explicit(&hs->beat, memory_order_acquire);
+    return (hs_beat_t)atomic_load_explicit(&hs->beat, memory_order_acquire);
 }
 
-int litho_hs_worker_count(const struct litho_hs *hs)
+int hs_hs_worker_count(const struct hs_hs *hs)
 {
     return hs ? hs->worker_count : 0;
 }
 
-int litho_hs_post_event(struct litho_hs *hs, uint64_t tick, uint32_t code, uint32_t value)
+int hs_hs_post_event(struct hs_hs *hs, uint64_t tick, uint32_t code, uint32_t value)
 {
-    struct litho_ctrl_event *e;
+    struct hs_ctrl_event *e;
 
-    if (hs == NULL || hs->n_events >= LITHO_HS_MAX_EVENTS) {
+    if (hs == NULL || hs->n_events >= HS_HS_MAX_EVENTS) {
         return -EINVAL;
     }
     e = &hs->events[hs->n_events];
@@ -807,10 +807,10 @@ int litho_hs_post_event(struct litho_hs *hs, uint64_t tick, uint32_t code, uint3
     return 0;
 }
 
-uint64_t litho_hs_apply_matured(struct litho_hs *hs, uint64_t cycle)
+uint64_t hs_hs_apply_matured(struct hs_hs *hs, uint64_t cycle)
 {
     uint32_t i;
-    const struct litho_ctrl_event *e;
+    const struct hs_ctrl_event *e;
     uint64_t fold = hs->event_fold;
 
     /* Events were posted in seq order and are already (tick, seq) ordered
@@ -821,10 +821,10 @@ uint64_t litho_hs_apply_matured(struct litho_hs *hs, uint64_t cycle)
             /* Posted in nondecreasing tick order by the scoreboard. */
             break;
         }
-        fold = litho_fnv1a64(fold == 0 ? 0xcbf29ce484222325ull : fold, e->seq);
-        fold = litho_fnv1a64(fold, e->tick);
-        fold = litho_fnv1a64(fold, e->code);
-        fold = litho_fnv1a64(fold, e->value);
+        fold = hs_fnv1a64(fold == 0 ? 0xcbf29ce484222325ull : fold, e->seq);
+        fold = hs_fnv1a64(fold, e->tick);
+        fold = hs_fnv1a64(fold, e->code);
+        fold = hs_fnv1a64(fold, e->value);
         hs->events_applied = i + 1;
     }
     hs->event_fold = fold;
@@ -867,15 +867,15 @@ static unsigned hist_bin(int64_t abs_ns)
 {
     unsigned i;
 
-    for (i = 0; i < LITHO_HS_HIST_BINS; i++) {
+    for (i = 0; i < HS_HS_HIST_BINS; i++) {
         if (abs_ns <= k_hist_bound[i]) {
             return i;
         }
     }
-    return LITHO_HS_HIST_BINS - 1;
+    return HS_HS_HIST_BINS - 1;
 }
 
-void litho_hs_jitter(const struct litho_hs *hs, struct litho_jitter_stats *out)
+void hs_hs_jitter(const struct hs_hs *hs, struct hs_jitter_stats *out)
 {
     uint64_t n, i;
     int64_t *sorted;
@@ -889,8 +889,8 @@ void litho_hs_jitter(const struct litho_hs *hs, struct litho_jitter_stats *out)
         return;
     }
     n = hs->sample_count;
-    if (n > LITHO_HS_SAMPLES_MAX) {
-        n = LITHO_HS_SAMPLES_MAX;
+    if (n > HS_HS_SAMPLES_MAX) {
+        n = HS_HS_SAMPLES_MAX;
     }
     out->count = n;
     out->period_ns = hs->cfg.phase_budget_ns;
@@ -921,7 +921,7 @@ void litho_hs_jitter(const struct litho_hs *hs, struct litho_jitter_stats *out)
     free(sorted);
 }
 
-void litho_hs_stats(const struct litho_hs *hs, struct litho_hs_stats *out)
+void hs_hs_stats(const struct hs_hs *hs, struct hs_hs_stats *out)
 {
     int i;
 
@@ -939,12 +939,12 @@ void litho_hs_stats(const struct litho_hs *hs, struct litho_hs_stats *out)
     out->freezes = hs->freeze_count;
     out->n_comps = (uint32_t)hs->n_comps;
     for (i = 0; i < hs->n_comps; i++) {
-        strncpy(out->comps[i].name, hs->comps[i].name, LITHO_HS_NAME_MAX - 1);
+        strncpy(out->comps[i].name, hs->comps[i].name, HS_HS_NAME_MAX - 1);
         out->comps[i].fires = hs->comps[i].fires;
         out->comps[i].overruns = hs->comps[i].overruns;
         out->comps[i].max_work_ns = hs->comps[i].max_work_ns;
         out->comps[i].max_overrun_ns = hs->comps[i].max_overrun_ns;
         out->comps[i].repeat_offender = hs->comps[i].repeat_offender;
     }
-    litho_hs_jitter(hs, &out->jitter);
+    hs_hs_jitter(hs, &out->jitter);
 }

@@ -1,69 +1,70 @@
-LithoOS for the Anbernic RG35XX 2024 — flash instructions
+HandshakeOS for the Anbernic RG35XX 2024 — flash instructions
 =========================================================
-Built 2026-11-19, 4:13 PM America/New_York.
+Built 2026-11-19, 5:51 PM America/New_York.
 
 This image is for a SECOND microSD card (TF1). Do not overwrite the
 stock card. Back that card up first (see board/rg35xx-2024/windows-backup-stock-sd.ps1
-in the LithoOS repo).
+in the HandshakeOS repo).
 
 Play wins ties: the machine that already plays games stays on the
 stock card until you are happy with this one.
 
 Files
 -----
-  lithoos-rg35xx-2024.img.zst     compressed image (13 MiB) — copy this first
-  lithoos-rg35xx-2024.img.zst.sha256
-  lithoos-rg35xx-2024.img         raw disk image, 248 MiB, after you decompress
-  lithoos-rg35xx-2024.img.sha256  SHA-256 of the raw image (this is the one to match)
+  handshakeos-rg35xx-2024.img.zst     compressed image (12.9 MiB) — copy this first
+  handshakeos-rg35xx-2024.img.zst.sha256
+  handshakeos-rg35xx-2024.img         raw disk image, 248 MiB, after you decompress
+  handshakeos-rg35xx-2024.img.sha256  SHA-256 of the raw image (this is the one to match)
 
 SHA-256 (lowercase hex)
 -----------------------
-  raw  lithoos-rg35xx-2024.img
-    12ec101b63a8ca121d1363e040297ea6de03aa45ebdce715dbba0ba72d28142e
-  zstd lithoos-rg35xx-2024.img.zst
-    5bdf5cdf234b10d5230ef1d16b371c26517a3ca072fdb2f612004b95b914e51c
+  raw  handshakeos-rg35xx-2024.img
+    c12d12e1bff25515e1af8e440dd37f91954fc9febdddc3fb1b1e135fd6826352
+  zstd handshakeos-rg35xx-2024.img.zst
+    da37f670e1220d6cae3cfe4034ba848e6e060895e842f6892ae4a3094aa730b5
 
 Decompress (PowerShell, in this folder)
 ---------------------------------------
   # Verify the compressed copy first
-  Get-FileHash .\lithoos-rg35xx-2024.img.zst -Algorithm SHA256
+  Get-FileHash .\handshakeos-rg35xx-2024.img.zst -Algorithm SHA256
   # Then decompress with one of:
-  zstd -d -f .\lithoos-rg35xx-2024.img.zst
+  zstd -d -f .\handshakeos-rg35xx-2024.img.zst
   # or PeaZip / 7-Zip (zstd). After that:
-  Get-FileHash .\lithoos-rg35xx-2024.img -Algorithm SHA256
-The raw hash must match 12ec101b63a8ca121d1363e040297ea6de03aa45ebdce715dbba0ba72d28142e.
+  Get-FileHash .\handshakeos-rg35xx-2024.img -Algorithm SHA256
+The raw hash must match c12d12e1bff25515e1af8e440dd37f91954fc9febdddc3fb1b1e135fd6826352.
 
 Flash
 -----
 1. Open Rufus, Raspberry Pi Imager, or balenaEtcher.
-2. Select lithoos-rg35xx-2024.img (the raw file, not the .zst).
+2. Select handshakeos-rg35xx-2024.img (the raw file, not the .zst).
 3. Select the SECOND microSD card. Triple-check the drive letter.
 4. Write the image. Eject the card safely.
 5. Plug the card into the RG35XX 2024 (the TF1 slot reserved for experiments).
 6. Boot. You should get:
-     - serial (UART, 115200 8N1, earlycon 0x05000000): "LithoOS PID 1" + handshake ledger
+     - serial (UART, 115200 8N1, earlycon 0x05000000): "HandshakeOS PID 1" + handshake ledger
      - 640x480 Deep Purple shell on the panel (first light-up is the hardware test)
 
 Image layout (MBR, 248 MiB)
 ---------------------------
-  0..8 MiB     gap; u-boot-sunxi-with-spl.bin at 8 KiB (eGON.BT0 at 0x2004)
-  p1 64 MiB    FAT32  LITHO_BOOT  (bootable)  Image, DTB, extlinux/extlinux.conf
-  p2 80 MiB    ext4   LITHO_ROOT  static /init (litho-init), /bin/litho-gb, /roms
-  p3 96 MiB    FAT32  LITHO_ROMS  legal .gb files, visible from Windows
+  0..8 MiB     gap; LPDDR3 u-boot-sunxi-with-spl at 8 KiB (eGON.BT0 at 0x2004)
+  p1 64 MiB    FAT32  HS_BOOT  (bootable)  Image, NV3052C DTB, extlinux.conf, boot.scr
+  p2 80 MiB    ext4   HS_ROOT  static /init (handshake-init), /bin/handshake-gb, /roms
+  p3 96 MiB    FAT32  HS_ROMS  legal .gb files, visible from Windows
 
 Kernel / boot chain
 -------------------
   Linux 7.3.5 aarch64, TF-A lts-v2.14.14 (PLAT=sun50i_h616),
-  U-Boot v2026.10 anbernic_rg35xx_h700_defconfig (LPDDR4).
-  DTB: sun50i-h700-anbernic-rg35xx-2024.dtb
+  U-Boot v2026.10 anbernic_rg35xx_h700_lpddr3_defconfig
+  (LPDDR3, 1024 MiB, DCDC3 1.2 V, 672 MHz). LPDDR4 is the alternate revision.
+  DTB: sun50i-h700-anbernic-rg35xx-2024.dtb (NV3052C-clean).
   cmdline: console=ttyS0,115200 earlycon=uart8250,mmio32,0x05000000
-           root=LABEL=LITHO_ROOT rootwait rw init=/init litho.serial
+           root=LABEL=HS_ROOT rootwait rw init=/init handshakeos.serial
 
 After flashing, Windows will see two FAT32 partitions if you plug the
-card into a PC: LITHO_BOOT and LITHO_ROMS. The ext4 LITHO_ROOT partition
+card into a PC: HS_BOOT and HS_ROMS. The ext4 HS_ROOT partition
 Windows will ignore; that is expected.
 
-LITHO_ROMS ships litho-demo.gb (MIT, original) and libbet.gb (zlib,
+HS_ROMS ships handshake-demo.gb (MIT, original) and libbet.gb (zlib,
 Libbet and the Magic Floor v0.08, Damian Yerrick). You can add more
 open-source / public-domain .gb files from Explorer. Commercial ROMs
 are not included and should not be added unless you own the rights.

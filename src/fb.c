@@ -2,9 +2,9 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
-#include "litho_fb.h"
-#include "litho_font.h"
-#include "litho_png.h"
+#include "hs_fb.h"
+#include "hs_font.h"
+#include "hs_png.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -20,27 +20,27 @@
 #include <linux/fb.h>
 #ifdef __has_include
 #  if __has_include(<drm/drm.h>)
-#    define LITHO_HAS_DRM 1
+#    define HS_HAS_DRM 1
 #  endif
 #endif
-#ifndef LITHO_HAS_DRM
+#ifndef HS_HAS_DRM
 #  if defined(__linux__)
-#    define LITHO_HAS_DRM 1
+#    define HS_HAS_DRM 1
 #  endif
 #endif
-#ifdef LITHO_HAS_DRM
+#ifdef HS_HAS_DRM
 #include <drm/drm.h>
 #include <drm/drm_mode.h>
 #endif
 #endif
 
-static uint32_t *pix_at(struct litho_fb *fb, int x, int y)
+static uint32_t *pix_at(struct hs_fb *fb, int x, int y)
 {
     return (uint32_t *)((uint8_t *)fb->pix + (size_t)y * (size_t)fb->stride_bytes) + x;
 }
 
 
-static uint32_t pack_hw(const struct litho_fb *fb, uint32_t xrgb)
+static uint32_t pack_hw(const struct hs_fb *fb, uint32_t xrgb)
 {
     unsigned r = (xrgb >> 16) & 0xFFu;
     unsigned g = (xrgb >> 8) & 0xFFu;
@@ -61,11 +61,11 @@ static uint32_t pack_hw(const struct litho_fb *fb, uint32_t xrgb)
     return (r << fb->red_off) | (g << fb->green_off) | (b << fb->blue_off);
 }
 
-static int alloc_shadow(struct litho_fb *fb)
+static int alloc_shadow(struct hs_fb *fb)
 {
-    fb->w = LITHO_FB_W;
-    fb->h = LITHO_FB_H;
-    fb->stride_bytes = LITHO_FB_W * 4;
+    fb->w = HS_FB_W;
+    fb->h = HS_FB_H;
+    fb->stride_bytes = HS_FB_W * 4;
     fb->pix = (uint32_t *)calloc((size_t)fb->w * (size_t)fb->h, 4);
     if (fb->pix == NULL) {
         return -ENOMEM;
@@ -74,7 +74,7 @@ static int alloc_shadow(struct litho_fb *fb)
     return 0;
 }
 
-static void default_fmt(struct litho_fb *fb, int bpp)
+static void default_fmt(struct hs_fb *fb, int bpp)
 {
     fb->hw_bpp = bpp;
     if (bpp == 16) {
@@ -95,7 +95,7 @@ static void default_fmt(struct litho_fb *fb, int bpp)
     }
 }
 
-static void blit_to_hw(struct litho_fb *fb)
+static void blit_to_hw(struct hs_fb *fb)
 {
     int x, y, dw, dh, ox, oy;
     const uint8_t *src;
@@ -148,7 +148,7 @@ static void blit_to_hw(struct litho_fb *fb)
 }
 
 
-int litho_fb_open(struct litho_fb *fb, const char *backend)
+int hs_fb_open(struct hs_fb *fb, const char *backend)
 {
     const char *kind = backend ? backend : "auto";
     int tries, rc;
@@ -157,9 +157,9 @@ int litho_fb_open(struct litho_fb *fb, const char *backend)
         return -EINVAL;
     }
     memset(fb, 0, sizeof(*fb));
-    fb->w = LITHO_FB_W;
-    fb->h = LITHO_FB_H;
-    fb->stride_bytes = LITHO_FB_W * 4;
+    fb->w = HS_FB_W;
+    fb->h = HS_FB_H;
+    fb->stride_bytes = HS_FB_W * 4;
     fb->fd = -1;
     default_fmt(fb, 32);
 
@@ -167,16 +167,16 @@ int litho_fb_open(struct litho_fb *fb, const char *backend)
 #ifdef __linux__
         /* Real hardware may need a moment for the panel to bind. */
         for (tries = 0; tries < 25; tries++) {
-            rc = litho_fb_open(fb, "drm");
+            rc = hs_fb_open(fb, "drm");
             if (rc == 0) {
                 return 0;
             }
-            litho_fb_close(fb);
-            rc = litho_fb_open(fb, "fbdev");
+            hs_fb_close(fb);
+            rc = hs_fb_open(fb, "fbdev");
             if (rc == 0) {
                 return 0;
             }
-            litho_fb_close(fb);
+            hs_fb_close(fb);
             if (tries < 24) {
                 usleep(100000);
             }
@@ -248,15 +248,15 @@ int litho_fb_open(struct litho_fb *fb, const char *backend)
         if (fb->red_len == 0) {
             default_fmt(fb, fb->hw_bpp);
         }
-        fb->kind = LITHO_FB_FBDEV;
+        fb->kind = HS_FB_FBDEV;
         if (alloc_shadow(fb) != 0) {
-            litho_fb_close(fb);
+            hs_fb_close(fb);
             return -ENOMEM;
         }
         return 0;
     }
 
-#ifdef LITHO_HAS_DRM
+#ifdef HS_HAS_DRM
     if (strcmp(kind, "drm") == 0) {
         const char *paths[] = { "/dev/dri/card0", "/dev/dri/card1", NULL };
         int i, fd = -1;
@@ -314,8 +314,8 @@ int litho_fb_open(struct litho_fb *fb, const char *backend)
             encoder_id = conn.encoder_id;
             chosen = modes[0];
             for (m = 0; m < (int)conn.count_modes && m < 32; m++) {
-                if (modes[m].hdisplay == LITHO_FB_W
-                    && modes[m].vdisplay == LITHO_FB_H) {
+                if (modes[m].hdisplay == HS_FB_W
+                    && modes[m].vdisplay == HS_FB_H) {
                     chosen = modes[m];
                     break;
                 }
@@ -343,8 +343,8 @@ int litho_fb_open(struct litho_fb *fb, const char *backend)
         }
 
         memset(&creq, 0, sizeof(creq));
-        creq.width = chosen.hdisplay ? chosen.hdisplay : LITHO_FB_W;
-        creq.height = chosen.vdisplay ? chosen.vdisplay : LITHO_FB_H;
+        creq.width = chosen.hdisplay ? chosen.hdisplay : HS_FB_W;
+        creq.height = chosen.vdisplay ? chosen.vdisplay : HS_FB_H;
         creq.bpp = 32;
         if (ioctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &creq) != 0) {
             int err = -errno;
@@ -399,13 +399,13 @@ int litho_fb_open(struct litho_fb *fb, const char *backend)
         fb->hw_h = (int)creq.height;
         fb->hw_stride = (int)creq.pitch;
         default_fmt(fb, 32);
-        fb->kind = LITHO_FB_DRM;
+        fb->kind = HS_FB_DRM;
         fb->fb_id = fbcmd.fb_id;
         fb->handle = creq.handle;
         fb->crtc_id = crtc_id;
         fb->conn_id = conn_id;
         if (alloc_shadow(fb) != 0) {
-            litho_fb_close(fb);
+            hs_fb_close(fb);
             return -ENOMEM;
         }
         return 0;
@@ -415,7 +415,7 @@ int litho_fb_open(struct litho_fb *fb, const char *backend)
     return -ENOTSUP;
 }
 
-void litho_fb_close(struct litho_fb *fb)
+void hs_fb_close(struct hs_fb *fb)
 {
     if (fb == NULL) {
         return;
@@ -436,7 +436,7 @@ void litho_fb_close(struct litho_fb *fb)
     fb->own_pix = 0;
 }
 
-void litho_fb_flip(struct litho_fb *fb)
+void hs_fb_flip(struct hs_fb *fb)
 {
     if (fb == NULL) {
         return;
@@ -444,12 +444,12 @@ void litho_fb_flip(struct litho_fb *fb)
     blit_to_hw(fb);
 }
 
-void litho_fb_clear(struct litho_fb *fb, uint32_t color)
+void hs_fb_clear(struct hs_fb *fb, uint32_t color)
 {
-    litho_fb_fill(fb, 0, 0, fb->w, fb->h, color);
+    hs_fb_fill(fb, 0, 0, fb->w, fb->h, color);
 }
 
-void litho_fb_fill(struct litho_fb *fb, int x, int y, int w, int h, uint32_t color)
+void hs_fb_fill(struct hs_fb *fb, int x, int y, int w, int h, uint32_t color)
 {
     int xx, yy, x0, y0, x1, y1;
 
@@ -474,7 +474,7 @@ void litho_fb_fill(struct litho_fb *fb, int x, int y, int w, int h, uint32_t col
     }
 }
 
-void litho_fb_rect(struct litho_fb *fb, int x, int y, int w, int h, int thickness, uint32_t color)
+void hs_fb_rect(struct hs_fb *fb, int x, int y, int w, int h, int thickness, uint32_t color)
 {
     int t;
 
@@ -482,14 +482,14 @@ void litho_fb_rect(struct litho_fb *fb, int x, int y, int w, int h, int thicknes
         thickness = 1;
     }
     for (t = 0; t < thickness; t++) {
-        litho_fb_fill(fb, x + t, y + t, w - 2 * t, 1, color);
-        litho_fb_fill(fb, x + t, y + h - 1 - t, w - 2 * t, 1, color);
-        litho_fb_fill(fb, x + t, y + t, 1, h - 2 * t, color);
-        litho_fb_fill(fb, x + w - 1 - t, y + t, 1, h - 2 * t, color);
+        hs_fb_fill(fb, x + t, y + t, w - 2 * t, 1, color);
+        hs_fb_fill(fb, x + t, y + h - 1 - t, w - 2 * t, 1, color);
+        hs_fb_fill(fb, x + t, y + t, 1, h - 2 * t, color);
+        hs_fb_fill(fb, x + w - 1 - t, y + t, 1, h - 2 * t, color);
     }
 }
 
-void litho_fb_fill_circle(struct litho_fb *fb, int cx, int cy, int radius, uint32_t color)
+void hs_fb_fill_circle(struct hs_fb *fb, int cx, int cy, int radius, uint32_t color)
 {
     int x, y, r2;
 
@@ -510,10 +510,10 @@ void litho_fb_fill_circle(struct litho_fb *fb, int cx, int cy, int radius, uint3
     }
 }
 
-void litho_fb_fill_round(struct litho_fb *fb, int x, int y, int w, int h, int radius, uint32_t color)
+void hs_fb_fill_round(struct hs_fb *fb, int x, int y, int w, int h, int radius, uint32_t color)
 {
     if (radius <= 0) {
-        litho_fb_fill(fb, x, y, w, h, color);
+        hs_fb_fill(fb, x, y, w, h, color);
         return;
     }
     if (radius * 2 > w) {
@@ -522,26 +522,26 @@ void litho_fb_fill_round(struct litho_fb *fb, int x, int y, int w, int h, int ra
     if (radius * 2 > h) {
         radius = h / 2;
     }
-    litho_fb_fill(fb, x + radius, y, w - 2 * radius, h, color);
-    litho_fb_fill(fb, x, y + radius, radius, h - 2 * radius, color);
-    litho_fb_fill(fb, x + w - radius, y + radius, radius, h - 2 * radius, color);
-    litho_fb_fill_circle(fb, x + radius, y + radius, radius, color);
-    litho_fb_fill_circle(fb, x + w - 1 - radius, y + radius, radius, color);
-    litho_fb_fill_circle(fb, x + radius, y + h - 1 - radius, radius, color);
-    litho_fb_fill_circle(fb, x + w - 1 - radius, y + h - 1 - radius, radius, color);
+    hs_fb_fill(fb, x + radius, y, w - 2 * radius, h, color);
+    hs_fb_fill(fb, x, y + radius, radius, h - 2 * radius, color);
+    hs_fb_fill(fb, x + w - radius, y + radius, radius, h - 2 * radius, color);
+    hs_fb_fill_circle(fb, x + radius, y + radius, radius, color);
+    hs_fb_fill_circle(fb, x + w - 1 - radius, y + radius, radius, color);
+    hs_fb_fill_circle(fb, x + radius, y + h - 1 - radius, radius, color);
+    hs_fb_fill_circle(fb, x + w - 1 - radius, y + h - 1 - radius, radius, color);
 }
 
-static void draw_glyph(struct litho_fb *fb, int x, int y, int scale, uint32_t color, int ch)
+static void draw_glyph(struct hs_fb *fb, int x, int y, int scale, uint32_t color, int ch)
 {
-    const uint8_t *g = litho_font_glyph(ch);
+    const uint8_t *g = hs_font_glyph(ch);
     int row, col, sy, sx;
 
     if (scale < 1) {
         scale = 1;
     }
-    for (row = 0; row < LITHO_FONT_H; row++) {
+    for (row = 0; row < HS_FONT_H; row++) {
         uint8_t bits = g[row];
-        for (col = 0; col < LITHO_FONT_W; col++) {
+        for (col = 0; col < HS_FONT_W; col++) {
             if ((bits & (uint8_t)(0x80u >> col)) == 0) {
                 continue;
             }
@@ -566,7 +566,7 @@ static void draw_glyph(struct litho_fb *fb, int x, int y, int scale, uint32_t co
     }
 }
 
-int litho_fb_text(struct litho_fb *fb, int x, int y, int scale, uint32_t color, const char *s)
+int hs_fb_text(struct hs_fb *fb, int x, int y, int scale, uint32_t color, const char *s)
 {
     int cx = x;
 
@@ -578,13 +578,13 @@ int litho_fb_text(struct litho_fb *fb, int x, int y, int scale, uint32_t color, 
     }
     while (*s) {
         draw_glyph(fb, cx, y, scale, color, (unsigned char)*s);
-        cx += LITHO_FONT_W * scale;
+        cx += HS_FONT_W * scale;
         s++;
     }
     return cx - x;
 }
 
-int litho_fb_printf(struct litho_fb *fb, int x, int y, int scale, uint32_t color, const char *fmt, ...)
+int hs_fb_printf(struct hs_fb *fb, int x, int y, int scale, uint32_t color, const char *fmt, ...)
 {
     char buf[256];
     va_list ap;
@@ -592,10 +592,10 @@ int litho_fb_printf(struct litho_fb *fb, int x, int y, int scale, uint32_t color
     va_start(ap, fmt);
     vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
-    return litho_fb_text(fb, x, y, scale, color, buf);
+    return hs_fb_text(fb, x, y, scale, color, buf);
 }
 
-int litho_fb_snapshot_ppm(const struct litho_fb *fb, const char *path)
+int hs_fb_snapshot_ppm(const struct hs_fb *fb, const char *path)
 {
     FILE *fp;
     int x, y;
@@ -630,10 +630,10 @@ int litho_fb_snapshot_ppm(const struct litho_fb *fb, const char *path)
     return 0;
 }
 
-int litho_fb_snapshot_png(const struct litho_fb *fb, const char *path)
+int hs_fb_snapshot_png(const struct hs_fb *fb, const char *path)
 {
     if (fb == NULL || fb->pix == NULL) {
         return -EINVAL;
     }
-    return litho_write_png(path, fb->pix, fb->w, fb->h, fb->stride_bytes);
+    return hs_write_png(path, fb->pix, fb->w, fb->h, fb->stride_bytes);
 }

@@ -3,13 +3,13 @@
 #define _GNU_SOURCE
 #endif
 
-#include "litho_gb.h"
+#include "hs_gb.h"
 
 #include <stdio.h>
 #include <string.h>
 
 #ifndef ROM_PATH
-#define ROM_PATH "roms/litho-demo.gb"
+#define ROM_PATH "roms/handshake-demo.gb"
 #endif
 
 #ifndef GB_FRAMES
@@ -31,15 +31,15 @@ static int fail_count;
 
 int main(void)
 {
-    struct litho_gb_stats first, st;
+    struct hs_gb_stats first, st;
     int i, w, rc;
 
     memset(&first, 0, sizeof(first));
-    printf("litho-gb-test  rom=%s  frames=%d  runs=%d\n",
+    printf("handshake-gb-test  rom=%s  frames=%d  runs=%d\n",
            ROM_PATH, GB_FRAMES, GB_RUNS);
 
     for (i = 0; i < GB_RUNS; i++) {
-        rc = litho_gb_scoreboard(ROM_PATH, 3, GB_FRAMES, &st);
+        rc = hs_gb_scoreboard(ROM_PATH, 3, GB_FRAMES, &st);
         CHECK(rc == 0);
         if (rc != 0) {
             break;
@@ -68,7 +68,7 @@ int main(void)
 
     printf("fairness:");
     for (w = 1; w <= 4; w++) {
-        rc = litho_gb_scoreboard(ROM_PATH, w, GB_FRAMES, &st);
+        rc = hs_gb_scoreboard(ROM_PATH, w, GB_FRAMES, &st);
         CHECK(rc == 0);
         CHECK(st.ledger_hash == first.ledger_hash);
         CHECK(st.frame_crc == first.frame_crc);

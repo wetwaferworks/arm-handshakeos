@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-#include "litho_png.h"
+#include "hs_png.h"
 
 #include <errno.h>
 #include <stdint.h>
@@ -118,7 +118,7 @@ static int write_chunk(FILE *fp, const char type[4], const uint8_t *data, size_t
     return 0;
 }
 
-int litho_write_png(const char *path, const uint32_t *pix, int width, int height, int stride_bytes)
+int hs_write_png(const char *path, const uint32_t *pix, int width, int height, int stride_bytes)
 {
     FILE *fp;
     uint8_t sig[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };

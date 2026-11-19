@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: MIT */
-#ifndef LITHO_BATTERY_H
-#define LITHO_BATTERY_H
+#ifndef HS_BATTERY_H
+#define HS_BATTERY_H
 
-struct litho_battery {
+struct hs_battery {
     int present;        /* 1 if a power-supply class device was found */
     int percent;        /* 0-100, or -1 if unknown */
     int charging;       /* 1 charging, 0 not, -1 unknown */
@@ -11,7 +11,7 @@ struct litho_battery {
     char status[32];
 };
 
-void litho_battery_clear(struct litho_battery *bat);
-int  litho_battery_read(struct litho_battery *bat);
+void hs_battery_clear(struct hs_battery *bat);
+int  hs_battery_read(struct hs_battery *bat);
 
-#endif /* LITHO_BATTERY_H */
+#endif /* HS_BATTERY_H */

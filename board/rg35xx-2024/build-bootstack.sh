@@ -1,5 +1,7 @@
 #!/bin/sh
-# LithoOS boot-stack recipe for the Anbernic RG35XX 2024.
+# HandshakeOS boot-stack recipe for the Anbernic RG35XX 2024.
+# Default DRAM is LPDDR3 (verified 1024 MiB, DCDC3 1.2 V, 672 MHz).
+# LPDDR4 is the alternate board revision (anbernic_rg35xx_h700_defconfig).
 # Default: check the cross toolchain and print exact commands.
 # It does NOT download or compile Linux, U-Boot, or TF-A unless you pass --fetch.
 # Fetching the kernel is a long step; do not do it just to see that the recipe works.
@@ -31,9 +33,11 @@ for arg in "$@"; do
     esac
 done
 
-echo "LithoOS boot-stack recipe"
+echo "HandshakeOS boot-stack recipe"
 echo "  kernel    Linux ${KERNEL_VERSION}  (override KERNEL_VERSION, floor is 6.12)"
-echo "  U-Boot    ${UBOOT_VERSION:-latest mainline (set UBOOT_VERSION to pin a tag)}   defconfig anbernic_rg35xx_h700_defconfig (LPDDR4)"
+echo "  U-Boot    ${UBOOT_VERSION:-latest mainline (set UBOOT_VERSION to pin a tag)}"
+echo "            defconfig anbernic_rg35xx_h700_lpddr3_defconfig (LPDDR3, default)"
+echo "            LPDDR4 alternate: anbernic_rg35xx_h700_defconfig"
 echo "  TF-A      ${TFA_VERSION:-latest (set TFA_VERSION to pin a tag)}     PLAT=sun50i_h616"
 echo "  cross     ${CROSS_COMPILE}gcc"
 echo "  work      ${WORK}"
@@ -56,11 +60,13 @@ echo "     Work only on a second card in TF1."
 echo "  2. Build TF-A:"
 echo "       git clone --depth 1 ${TFA_VERSION:+--branch ${TFA_VERSION} }https://github.com/ARM-software/arm-trusted-firmware"
 echo "       make -C arm-trusted-firmware PLAT=sun50i_h616 CROSS_COMPILE=${CROSS_COMPILE} bl31 -j${JOBS}"
-echo "  3. Build mainline U-Boot with that BL31, LPDDR4:"
+echo "  3. Build mainline U-Boot with that BL31, LPDDR3 (default):"
 echo "       git clone --depth 1 ${UBOOT_VERSION:+--branch ${UBOOT_VERSION} }https://github.com/u-boot/u-boot"
-echo "       make -C u-boot anbernic_rg35xx_h700_defconfig"
+echo "       git -C u-boot apply ${ROOT}/board/rg35xx-2024/patches/u-boot/*.patch"
+echo "       make -C u-boot anbernic_rg35xx_h700_lpddr3_defconfig"
 echo "       make -C u-boot BL31=../arm-trusted-firmware/build/sun50i_h616/release/bl31.bin CROSS_COMPILE=${CROSS_COMPILE} -j${JOBS}"
-echo "       # product: u-boot/u-boot-sunxi-with-spl.bin"
+echo "       # product: u-boot/u-boot-sunxi-with-spl.bin  (LPDDR3)"
+echo "       # LPDDR4 boards: use anbernic_rg35xx_h700_defconfig instead."
 echo "  4. Build mainline Linux + fragment + the LCD/OTG/MMC1 patches in patches/README.md:"
 echo "       git clone --depth 1 --branch v${KERNEL_VERSION} https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
 echo "       # or a 7.x stable of the ROCKNIX vintage, if you prefer"
@@ -72,7 +78,9 @@ echo "       # dtb: sun50i-h700-anbernic-rg35xx-2024.dtb  (keep the rev6 variant
 echo "  5. SD layout (sunxi):"
 echo "       SPL+U-Boot at 8 KiB (dd if=u-boot-sunxi-with-spl.bin of=/dev/sdX bs=1024 seek=8)"
 echo "       FAT boot partition: Image, dtb, extlinux.conf"
-echo "       ext4 root: litho-init as /init, plus /proc /sys /dev"
+echo "       ext4 root: handshake-init as /init, plus /proc /sys /dev"
+echo "       Boot DTB is the NV3052C-clean tree (panel compatible"
+echo "       anbernic,rg35xx-plus-panel only; no external .panel firmware)."
 echo "  6. Console: ttyS0,115200"
 echo
 
@@ -101,7 +109,11 @@ if [ ! -d u-boot ]; then
         git clone --depth 1 https://github.com/u-boot/u-boot
     fi
 fi
-make -C u-boot anbernic_rg35xx_h700_defconfig
+# Apply the verified H700 LPDDR3 defconfig and SPL breadcrumb patches.
+for pat in "${ROOT}/board/rg35xx-2024/patches/u-boot/"*.patch; do
+    git -C u-boot apply "${pat}"
+done
+make -C u-boot anbernic_rg35xx_h700_lpddr3_defconfig
 make -C u-boot \
     BL31="${WORK}/arm-trusted-firmware/build/sun50i_h616/release/bl31.bin" \
     CROSS_COMPILE="${CROSS_COMPILE}" -j"${JOBS}"

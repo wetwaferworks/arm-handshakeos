@@ -2,7 +2,7 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
-#include "litho_battery.h"
+#include "hs_battery.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-void litho_battery_clear(struct litho_battery *bat)
+void hs_battery_clear(struct hs_battery *bat)
 {
     if (bat == NULL) {
         return;
@@ -42,7 +42,7 @@ static int read_file(const char *path, char *buf, size_t buflen)
     return 0;
 }
 
-int litho_battery_read(struct litho_battery *bat)
+int hs_battery_read(struct hs_battery *bat)
 {
     DIR *dir;
     struct dirent *ent;
@@ -56,7 +56,7 @@ int litho_battery_read(struct litho_battery *bat)
     if (bat == NULL) {
         return -EINVAL;
     }
-    litho_battery_clear(bat);
+    hs_battery_clear(bat);
 
     dir = opendir("/sys/class/power_supply");
     if (dir == NULL) {

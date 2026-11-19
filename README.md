@@ -1,8 +1,8 @@
-# LithoOS
+# HandshakeOS
 
 An operating system built on the Timing Handshake, starting as a pure-C userspace on mainline Linux, aimed at the Anbernic RG35XX 2024.
 
-Jaydee Wetwork renamed it LithoOS on 19 November 2026. The family reads clean: LithoLattice is the engine, LithoKraft is the game, LithoOS is the system underneath both. The test device is a little Game Boy-class handheld that was bought for play. The trial is a guest on that machine, not a takeover. Play wins ties. Experiments run on a second SD card; the stock card stays untouched.
+Jaydee Wetwork first called the userspace LithoOS on 19 November 2026, then settled on HandshakeOS the same day so the boot splash and the Timing Handshake share a name. LithoLattice remains the engine, LithoKraft remains the game, and HandshakeOS is the system underneath both. The test device is a little Game Boy-class handheld that was bought for play. The trial is a guest on that machine, not a takeover. Play wins ties. Experiments run on a second SD card; the stock card stays untouched.
 
 This repository is Milestone P1: a clean-room MIT C userland you can build and test on a host, cross-compile for ARM64, and a recipe for the open boot stack. It does not yet boot on the handheld, and it does not invent later milestone numbers.
 
@@ -22,24 +22,24 @@ The seating is exact: **three worker threads talk to one main clock thread**, an
 
 **publish → pull → barrier → commit**
 
-If a phase misses its window, the policy is **WAIT**: the phase extends, nothing is skipped, and the overrun is counted, not hidden. If it blows the watchdog (default 250 ms), the policy is **FREEZE**: the clock stops, `lastFreeze` names the offending component, and `resetAfterFreeze` bumps the generation so stale in-flight work revalidates and dies instead of landing late. That is the anti-Pathfinder property. Mars Pathfinder reset on a mutex priority inversion in 1997; a LithoOS phase cannot invert, because there is no lock to invert on.
+If a phase misses its window, the policy is **WAIT**: the phase extends, nothing is skipped, and the overrun is counted, not hidden. If it blows the watchdog (default 250 ms), the policy is **FREEZE**: the clock stops, `lastFreeze` names the offending component, and `resetAfterFreeze` bumps the generation so stale in-flight work revalidates and dies instead of landing late. That is the anti-Pathfinder property. Mars Pathfinder reset on a mutex priority inversion in 1997; a HandshakeOS phase cannot invert, because there is no lock to invert on.
 
-Every committed phase is folded into a hash-chained ledger, in component-id order. The hash is about the work and the order it lands. Thread count changes who does the work, never what the work is. That fairness gate is LithoOS law.
+Every committed phase is folded into a hash-chained ledger, in component-id order. The hash is about the work and the order it lands. Thread count changes who does the work, never what the work is. That fairness gate is HandshakeOS law.
 
 ## Quick start
 
 ```sh
-make            # host tools: litho-init, litho-test, litho-bench
+make            # host tools: handshake-init, handshake-test, handshake-bench, handshake-gb
 make test       # unit tests, 100-run scoreboard, worker-count fairness
 make bench      # jitter histogram
 make preview    # 640x480 Deep Purple and Matrix Green screenshots
-make preview-gb # running litho-demo.gb inside the Deep Purple shell
+make preview-gb # running handshake-demo.gb inside the Deep Purple shell
 make gb-test    # 100-run + 1/2/3/4-worker GB handshake scoreboard
 make cross      # static aarch64 binaries
 make verify-cross
 ```
 
-`./build/host/litho-init --backend=headless --snapshot-both=.` writes `preview-purple.png` and `preview-green.png`. On the device, the same binary talks to DRM/KMS with an fbdev fallback, reads the RG35XX 2024 buttons from evdev, and can run as `/init`.
+`./build/host/handshake-init --backend=headless --snapshot-both=.` writes `preview-purple.png` and `preview-green.png`. On the device, the same binary talks to DRM/KMS with an fbdev fallback, reads the RG35XX 2024 buttons from evdev, and can run as `/init`.
 
 Build flags for our C: `-std=c11 -Wall -Wextra -Werror`. No C++, no mutexes in the handshake. Phase boundaries use C11 atomics. Workers are POSIX threads; the protocol they follow is lock-free.
 
@@ -77,30 +77,30 @@ Previews from this tree:
 
 - [`preview-purple.png`](preview-purple.png)
 - [`preview-green.png`](preview-green.png)
-- [`preview-gb-emu.png`](preview-gb-emu.png) — Peanut-GB running `roms/litho-demo.gb` under the 3+1 handshake, with the Gemstone dial, commit epoch, ledger hash, and audio xrun counter.
+- [`preview-gb-emu.png`](preview-gb-emu.png) — Peanut-GB running `roms/handshake-demo.gb` under the 3+1 handshake, with the Gemstone dial, commit epoch, ledger hash, and audio xrun counter.
 
 ## Hardware and the open stack
 
-Target: **Anbernic RG35XX 2024**, base model. Allwinner H700, four Cortex-A53 cores, 1 GB LPDDR4, 640×480 LCD. No Wi-Fi, no Bluetooth. Data moves on the SD card or USB-C.
+Target: **Anbernic RG35XX 2024**, base model. Allwinner H700, four Cortex-A53 cores, 1 GB LPDDR3 (DCDC3 1.2 V, 672 MHz) on the verified board, 640×480 LCD. Some units are LPDDR4; that is the alternate revision. No Wi-Fi, no Bluetooth. Data moves on the SD card or USB-C.
 
 The stack is open all the way down:
 
 ## Game Boy loop (Peanut-GB)
 
-`litho-gb` runs a tiny MIT DMG core (Peanut-GB + minigb_apu) as a clock-thread-affine component of the Timing Handshake. Scripted or evdev buttons are stamped `(seq, tick)` before the phase and applied in `(tick, seq)` order when that tick matures. Each frame's 160×144 picture and its finished PCM snapshot are CRC'd and folded into the hash-chained commit ledger. There are no mutexes and no locks around audio: the snapshot is produced and consumed on the same phase boundary, so xruns stay at zero.
+`handshake-gb` runs a tiny MIT DMG core (Peanut-GB + minigb_apu) as a clock-thread-affine component of the Timing Handshake. Scripted or evdev buttons are stamped `(seq, tick)` before the phase and applied in `(tick, seq)` order when that tick matures. Each frame's 160×144 picture and its finished PCM snapshot are CRC'd and folded into the hash-chained commit ledger. There are no mutexes and no locks around audio: the snapshot is produced and consumed on the same phase boundary, so xruns stay at zero.
 
-The only ROM in `roms/` is `litho-demo.gb`, an original MIT demo. Commercial Game Boy software is never downloaded or shipped. See `roms/manifest.txt` and `CREDITS.md`.
+The only ROM in `roms/` is `handshake-demo.gb`, an original MIT demo. Commercial Game Boy software is never downloaded or shipped. See `roms/manifest.txt` and `CREDITS.md`.
 
 On this tree, 100 runs of 90 frames plus a 1 / 2 / 3 / 4 worker fairness gate all produced one ledger:
 
-`9e9c254b6cf9f79b`  (frame `7e0233d6a854a8a6`, audio `8c6078dd78fa5589`, xruns 0, overruns 0)
+`5a45548614037e20`  (frame `33e3294d476b16a6`, audio `8c6078dd78fa5589`, xruns 0, overruns 0)
 
 Host and `qemu-aarch64-static` agree.
 
-A QEMU virt boot with a real ARM64 kernel and this tree's static `litho-init` as PID 1 is in `board/qemu-virt/run-pid1.sh`.
+A QEMU virt boot with a real ARM64 kernel and this tree's static `handshake-init` as PID 1 is in `board/qemu-virt/run-pid1.sh`.
 
 - mainline Linux (≥ 6.12, so `sched_ext` is available for Phase 2)
-- mainline U-Boot, DDR4 config (`anbernic_rg35xx_h700_defconfig`)
+- mainline U-Boot, LPDDR3 config (`anbernic_rg35xx_h700_lpddr3_defconfig`); LPDDR4 boards use `anbernic_rg35xx_h700_defconfig`
 - open Trusted Firmware-A (`PLAT=sun50i_h616`)
 - Panfrost for the Mali G31
 - this MIT C userland

@@ -15,6 +15,6 @@ Sources, for reference, not as a fork:
 
 - <https://github.com/ROCKNIX/distribution> (default branch `next`), directory `projects/ROCKNIX/devices/H700/patches/linux/`
 - Device tree in mainline: `arch/arm64/boot/dts/allwinner/sun50i-h700-anbernic-rg35xx-2024.dts`
-- U-Boot defconfig: `configs/anbernic_rg35xx_h700_defconfig` (H616 LPDDR4, AXP717). Use the DDR4 build, not a DDR3 image.
+- U-Boot: the default HandshakeOS build is `configs/anbernic_rg35xx_h700_lpddr3_defconfig` (H616 LPDDR3, 1024 MiB, DCDC3 1.2 V, DRAM_CLK 672 MHz, AXP717), added by the patches in `patches/u-boot/`. Some units are LPDDR4; those use the mainline `anbernic_rg35xx_h700_defconfig` instead. The two verified U-Boot patches also add SPL SRAM progress breadcrumbs at 0x49f00.
 
 This pass does not vendor those patches. Pull them when you are ready to build a bootable image, record the exact commits, and keep corresponding source with any image you distribute.

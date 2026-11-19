@@ -1,27 +1,35 @@
 #!/bin/bash
-# Assemble lithoos-rg35xx-2024.img from already-built TF-A/U-Boot/Linux + litho-init.
+# Assemble handshakeos-rg35xx-2024.img from already-built TF-A, LPDDR3 U-Boot, Linux, and handshake-init.
+# Default SPL is the verified LPDDR3 build (DCDC3 1.2 V, 672 MHz). Override UBOOT for LPDDR4 boards.
 # Does not remount host disks. Builds partition images, then concatenates them.
 set -euo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)"
-SCR="${SCR:-/workspace/scratch/lithoos}"
-OUT="${OUT:-$SCR/images/lithoos-rg35xx-2024.img}"
-UBOOT="${UBOOT:-$SCR/src/u-boot/u-boot-sunxi-with-spl.bin}"
+SCR="${SCR:-/workspace/scratch/handshakeos}"
+OUT="${OUT:-$SCR/images/handshakeos-rg35xx-2024.img}"
+UBOOT="${UBOOT:-$SCR/fel/fixed/u-boot-sunxi-with-spl-lpddr3.bin}"
 KERNEL="${KERNEL:-$SCR/src/linux-7.3.5/arch/arm64/boot/Image}"
-DTB="${DTB:-$SCR/src/linux-7.3.5/arch/arm64/boot/dts/allwinner/sun50i-h700-anbernic-rg35xx-2024.dtb}"
-INIT="${INIT:-$ROOT/build/aarch64/litho-init}"
-GB="${GB:-$ROOT/build/aarch64/litho-gb}"
+DTB="${DTB:-$SCR/fel/fixed/sun50i-h700-anbernic-rg35xx-2024-nv3052c.dtb}"
+INIT="${INIT:-$ROOT/build/aarch64/handshake-init}"
+GB="${GB:-$ROOT/build/aarch64/handshake-gb}"
 ROMS="${ROMS:-$ROOT/roms}"
 
 # Geometry (512-byte sectors). SPL lives in the 8 MiB gap at offset 8 KiB.
-#  p1 FAT32 LITHO_BOOT  64 MiB
-#  p2 ext4  LITHO_ROOT  80 MiB
-#  p3 FAT32 LITHO_ROMS  96 MiB
+#  p1 FAT32 HS_BOOT  64 MiB
+#  p2 ext4  HS_ROOT  80 MiB
+#  p3 FAT32 HS_ROMS  96 MiB
 #  total 8 + 64 + 80 + 96 = 248 MiB
 GAP_MIB=8
 BOOT_MIB=64
 ROOT_MIB=80
 ROMS_MIB=96
 TOTAL_MIB=$((GAP_MIB + BOOT_MIB + ROOT_MIB + ROMS_MIB))
+
+# Prefer the verified NV3052C-clean DTB. If only the dts is present, compile it.
+if [ ! -f "$DTB" ] && [ -f "$ROOT/board/rg35xx-2024/dts/sun50i-h700-anbernic-rg35xx-2024-nv3052c.dts" ]; then
+    DTB="$SCR/fel/fixed/sun50i-h700-anbernic-rg35xx-2024-nv3052c.dtb"
+    mkdir -p "$(dirname "$DTB")"
+    dtc -q -I dts -O dtb -o "$DTB"         "$ROOT/board/rg35xx-2024/dts/sun50i-h700-anbernic-rg35xx-2024-nv3052c.dts"
+fi
 
 for f in "$UBOOT" "$KERNEL" "$DTB" "$INIT" "$GB"; do
     if [ ! -f "$f" ]; then
@@ -36,53 +44,69 @@ trap 'rm -rf "$STAGE"' EXIT
 # --- boot FAT ---
 BOOT_IMG="$STAGE/boot.fat"
 truncate -s ${BOOT_MIB}M "$BOOT_IMG"
-/sbin/mkfs.vfat -F 32 -n LITHO_BOOT "$BOOT_IMG"
+/sbin/mkfs.vfat -F 32 -n HS_BOOT "$BOOT_IMG"
 mmd -i "$BOOT_IMG" ::/extlinux
 mcopy -i "$BOOT_IMG" "$KERNEL" ::/Image
+# NV3052C-clean DTB, also installed under the familiar mainline filename.
+mcopy -i "$BOOT_IMG" "$DTB" ::/sun50i-h700-anbernic-rg35xx-2024-nv3052c.dtb
 mcopy -i "$BOOT_IMG" "$DTB" ::/sun50i-h700-anbernic-rg35xx-2024.dtb
 cat > "$STAGE/extlinux.conf" << 'EOF'
 UI
-DEFAULT lithoos
-LABEL lithoos
+DEFAULT handshakeos
+LABEL handshakeos
   LINUX /Image
   FDT /sun50i-h700-anbernic-rg35xx-2024.dtb
-  APPEND console=ttyS0,115200 earlycon=uart8250,mmio32,0x05000000 root=LABEL=LITHO_ROOT rootwait rw init=/init litho.serial
+  APPEND console=ttyS0,115200 earlycon=uart8250,mmio32,0x05000000 root=LABEL=HS_ROOT rootwait rw init=/init handshakeos.serial
 EOF
 mcopy -i "$BOOT_IMG" "$STAGE/extlinux.conf" ::/extlinux/extlinux.conf
+# SD-card boot.scr (ARM IH_ARCH, same as the FEL scripts). U-Boot sources this
+# if extlinux is missing; both are installed.
+cat > "$STAGE/boot.txt" << 'EOF'
+echo "HandshakeOS SD boot"
+setenv bootargs "console=ttyS0,115200 earlycon=uart8250,mmio32,0x05000000 root=LABEL=HS_ROOT rootwait rw init=/init handshakeos.serial"
+load mmc 0:1 ${kernel_addr_r} /Image
+load mmc 0:1 ${fdt_addr_r} /sun50i-h700-anbernic-rg35xx-2024.dtb
+booti ${kernel_addr_r} - ${fdt_addr_r}
+EOF
+# sunxi-fel only hands fel_scriptaddr to IH_ARCH_ARM scripts; stay consistent
+# on the card as well so a typed `source` never surprises us.
+mkimage -A arm -T script -C none -n "HandshakeOS SD boot" -d "$STAGE/boot.txt" "$STAGE/boot.scr" >/dev/null
+mcopy -i "$BOOT_IMG" "$STAGE/boot.scr" ::/boot.scr
+mcopy -i "$BOOT_IMG" "$STAGE/boot.txt" ::/boot.txt
 
 # --- root ext4 ---
 ROOT_DIR="$STAGE/root"
 mkdir -p "$ROOT_DIR"/{proc,sys,dev,roms,bin,etc}
 cp "$INIT" "$ROOT_DIR/init"
 chmod 755 "$ROOT_DIR/init"
-cp "$GB" "$ROOT_DIR/bin/litho-gb"
-chmod 755 "$ROOT_DIR/bin/litho-gb"
+cp "$GB" "$ROOT_DIR/bin/handshake-gb"
+chmod 755 "$ROOT_DIR/bin/handshake-gb"
 cp "$ROMS"/*.gb "$ROOT_DIR/roms/"
 cp "$ROMS/manifest.txt" "$ROOT_DIR/roms/"
 # also drop licenses if present
 cp "$ROMS"/*.LICENSE "$ROOT_DIR/roms/" 2>/dev/null || true
 # a tiny motd
-cat > "$ROOT_DIR/etc/lithoos-release" << EOF
-LithoOS RG35XX 2024
-init: litho-init (static)
+cat > "$ROOT_DIR/etc/handshakeos-release" << EOF
+HandshakeOS RG35XX 2024
+init: handshake-init (static)
 EOF
 ROOT_IMG="$STAGE/root.ext4"
-/sbin/mkfs.ext4 -q -F -L LITHO_ROOT -b 4096 -d "$ROOT_DIR" "$ROOT_IMG" ${ROOT_MIB}M
+/sbin/mkfs.ext4 -q -F -L HS_ROOT -b 4096 -d "$ROOT_DIR" "$ROOT_IMG" ${ROOT_MIB}M
 
 # --- roms FAT (Windows-visible) ---
 ROMS_IMG="$STAGE/roms.fat"
 truncate -s ${ROMS_MIB}M "$ROMS_IMG"
-/sbin/mkfs.vfat -F 32 -n LITHO_ROMS "$ROMS_IMG"
+/sbin/mkfs.vfat -F 32 -n HS_ROMS "$ROMS_IMG"
 mcopy -i "$ROMS_IMG" "$ROMS"/*.gb ::
 mcopy -i "$ROMS_IMG" "$ROMS/manifest.txt" ::
 [ -f "$ROMS/libbet.LICENSE" ] && mcopy -i "$ROMS_IMG" "$ROMS/libbet.LICENSE" ::
 cat > "$STAGE/README-ROMS.txt" << 'EOF'
-LITHO_ROMS — drop legal, open-source / public-domain Game Boy .gb files here
+HS_ROMS — drop legal, open-source / public-domain Game Boy .gb files here
 from Windows Explorer. Commercial ROMs are not included and should not be
 added unless you own the rights.
 
 Shipped:
-  litho-demo.gb   MIT, original LithoOS demo
+  handshake-demo.gb   MIT, original HandshakeOS demo
   libbet.gb       zlib, Libbet and the Magic Floor v0.08 (Damian Yerrick)
 See manifest.txt and libbet.LICENSE.
 EOF

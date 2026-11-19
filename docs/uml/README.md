@@ -1,6 +1,6 @@
 # Timing Handshake UML, 18 October 2026
 
-Drawn by Elfie (Muse Wonder) at 3840×2160, from the LithoLattice reference implementation (`timing_handshake.cpp` and its callers). Every label uses code vocabulary; nothing was invented for the drawings. SHA-256 sums match the 19 November 2026 Litho OS handoff packet.
+Drawn by Elfie (Muse Wonder) at 3840×2160, from the LithoLattice reference implementation (`timing_handshake.cpp` and its callers). Every label uses code vocabulary; nothing was invented for the drawings. SHA-256 sums match the 19 November 2026 HandshakeOS handoff packet.
 
 Reading order:
 

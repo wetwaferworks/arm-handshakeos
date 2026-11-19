@@ -1,17 +1,17 @@
 /* SPDX-License-Identifier: MIT */
 #include <stddef.h>
-#include "litho_font.h"
-#include "litho_font_data.h"
+#include "hs_font.h"
+#include "hs_font_data.h"
 
-const uint8_t *litho_font_glyph(int c)
+const uint8_t *hs_font_glyph(int c)
 {
-    if (c < LITHO_FONT_FIRST || c > LITHO_FONT_LAST) {
+    if (c < HS_FONT_FIRST || c > HS_FONT_LAST) {
         c = '?';
     }
-    return litho_font8[c - LITHO_FONT_FIRST];
+    return hs_font8[c - HS_FONT_FIRST];
 }
 
-int litho_font_text_width(const char *s, int scale)
+int hs_font_text_width(const char *s, int scale)
 {
     int n = 0;
 
@@ -22,5 +22,5 @@ int litho_font_text_width(const char *s, int scale)
         n++;
         s++;
     }
-    return n * LITHO_FONT_W * scale;
+    return n * HS_FONT_W * scale;
 }

@@ -1,8 +1,8 @@
-# Legal Game Boy ROMs shipped with LithoOS.
+# Legal Game Boy ROMs shipped with HandshakeOS.
 # Commercial / copyrighted ROMs are never downloaded, stored, or committed.
 
 # file  sha256  license  author / notes
-litho-demo.gb  84ec0d4b04892ddef8fde2b0f2c1cd7df7662d3f35033f1a5fa4ad455dc1231c  MIT  Original LithoOS demo (title, border, bouncing gem, D-pad nudge, A beep). Built by tools/make_litho_demo_gb.py. No third-party assets.
+handshake-demo.gb  4a56fc02118450d1ca45d954e57082f1c3d706b72882866fdfe78c8a57af3f43  MIT  Original HandshakeOS demo (title, border, bouncing gem, D-pad nudge, A beep). Built by tools/make_handshake_demo_gb.py. No third-party assets.
 libbet.gb  3607412031c8287cf878299ce96e581e85b852dde703806343b95576fa3ff1a9  zlib  Official v0.08 ROM of Libbet and the Magic Floor by Damian Yerrick (Magic Floor concept: Martin Korth). License in roms/libbet.LICENSE. Source: https://github.com/pinobatch/libbet/releases/tag/v0.08
 
 # Not included (license or official ROM not redistributable from here):

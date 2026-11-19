@@ -2,7 +2,7 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
-#include "litho_handshake.h"
+#include "hs_handshake.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,9 +25,9 @@ static int g_fails;
 static uint64_t work_pure(uint64_t phase, uint64_t cycle, uint64_t salt)
 {
     uint64_t h = 0xcbf29ce484222325ull;
-    h = litho_fnv1a64(h, phase);
-    h = litho_fnv1a64(h, cycle);
-    h = litho_fnv1a64(h, salt);
+    h = hs_fnv1a64(h, phase);
+    h = hs_fnv1a64(h, cycle);
+    h = hs_fnv1a64(h, salt);
     return h;
 }
 
@@ -41,7 +41,7 @@ static uint64_t work_control(uint64_t phase, uint64_t cycle, void *user)
 {
     (void)user;
     /* Control coupling: the drain is recorded as a note of the cycle.
-       Actual event apply happens at commit via litho_hs_apply_matured. */
+       Actual event apply happens at commit via hs_hs_apply_matured. */
     return work_pure(phase, cycle, 0xC0u);
 }
 
@@ -72,14 +72,14 @@ static uint64_t work_sleepy(uint64_t phase, uint64_t cycle, void *user)
     return 1;
 }
 
-static void load_events(struct litho_hs *hs)
+static void load_events(struct hs_hs *hs)
 {
     uint64_t tick;
     uint32_t n = 0;
 
     for (tick = 0; tick < 32; tick++) {
         if ((tick % 3) == 0) {
-            CHECK(litho_hs_post_event(hs, tick, (uint32_t)(tick * 7u + 1u),
+            CHECK(hs_hs_post_event(hs, tick, (uint32_t)(tick * 7u + 1u),
                                       (uint32_t)(tick + 11u)) == 0,
                   "post event %u", n);
             n++;
@@ -87,204 +87,204 @@ static void load_events(struct litho_hs *hs)
     }
 }
 
-static int setup_scoreboard(struct litho_hs *hs, int workers)
+static int setup_scoreboard(struct hs_hs *hs, int workers)
 {
-    struct litho_hs_config cfg;
-    struct litho_hs_comp_desc d;
+    struct hs_hs_config cfg;
+    struct hs_hs_comp_desc d;
 
-    litho_hs_default_config(&cfg);
+    hs_hs_default_config(&cfg);
     cfg.worker_threads = workers;
     cfg.phases_per_cycle = 4;
     cfg.phase_budget_ns = 2000000ull; /* 2 ms: overrun is diagnostic only */
-    cfg.watchdog_ceiling_ns = LITHO_HS_DEFAULT_CEILING_NS;
+    cfg.watchdog_ceiling_ns = HS_HS_DEFAULT_CEILING_NS;
     cfg.ledger = true;
-    if (litho_hs_init(hs, &cfg) != 0) {
+    if (hs_hs_init(hs, &cfg) != 0) {
         return -1;
     }
 
     memset(&d, 0, sizeof(d));
     d.name = "serial";
-    d.cadence = LITHO_CADENCE_EVERY_PHASE;
+    d.cadence = HS_CADENCE_EVERY_PHASE;
     d.tick_critical = true;
-    if (litho_hs_register(hs, &d, work_serial, NULL) == UINT32_MAX) {
+    if (hs_hs_register(hs, &d, work_serial, NULL) == UINT32_MAX) {
         return -1;
     }
 
     memset(&d, 0, sizeof(d));
     d.name = "control";
-    d.cadence = LITHO_CADENCE_EVERY_PHASE;
+    d.cadence = HS_CADENCE_EVERY_PHASE;
     d.affine = true;
     d.tick_critical = true;
-    if (litho_hs_register(hs, &d, work_control, NULL) == UINT32_MAX) {
+    if (hs_hs_register(hs, &d, work_control, NULL) == UINT32_MAX) {
         return -1;
     }
 
     memset(&d, 0, sizeof(d));
     d.name = "worker-a";
-    d.cadence = LITHO_CADENCE_EVERY_PHASE;
+    d.cadence = HS_CADENCE_EVERY_PHASE;
     d.tick_critical = true;
-    if (litho_hs_register(hs, &d, work_a, NULL) == UINT32_MAX) {
+    if (hs_hs_register(hs, &d, work_a, NULL) == UINT32_MAX) {
         return -1;
     }
 
     memset(&d, 0, sizeof(d));
     d.name = "worker-b";
-    d.cadence = LITHO_CADENCE_HALF_CYCLE;
+    d.cadence = HS_CADENCE_HALF_CYCLE;
     d.tick_critical = true;
-    if (litho_hs_register(hs, &d, work_b, NULL) == UINT32_MAX) {
+    if (hs_hs_register(hs, &d, work_b, NULL) == UINT32_MAX) {
         return -1;
     }
 
     memset(&d, 0, sizeof(d));
     d.name = "worker-c";
-    d.cadence = LITHO_CADENCE_CYCLE_HEAD;
+    d.cadence = HS_CADENCE_CYCLE_HEAD;
     d.tick_critical = true;
-    if (litho_hs_register(hs, &d, work_c, NULL) == UINT32_MAX) {
+    if (hs_hs_register(hs, &d, work_c, NULL) == UINT32_MAX) {
         return -1;
     }
 
     load_events(hs);
-    return litho_hs_start(hs);
+    return hs_hs_start(hs);
 }
 
 #define SCORE_PHASES 128
 
-static uint64_t run_scoreboard(struct litho_hs *hs)
+static uint64_t run_scoreboard(struct hs_hs *hs)
 {
     uint64_t phase, cycle;
     int ppc = 4;
 
     for (phase = 0; phase < SCORE_PHASES; phase++) {
         cycle = phase / (uint64_t)ppc;
-        if (!litho_hs_run_phase(hs, phase, cycle, 0)) {
+        if (!hs_hs_run_phase(hs, phase, cycle, 0)) {
             fprintf(stderr, "run_phase failed at phase %llu (frozen=%d)\n",
-                    (unsigned long long)phase, litho_hs_frozen(hs) ? 1 : 0);
+                    (unsigned long long)phase, hs_hs_frozen(hs) ? 1 : 0);
             return 0;
         }
     }
-    return litho_hs_ledger_hash(hs);
+    return hs_hs_ledger_hash(hs);
 }
 
 static void test_unit_poll_and_can_tick(void)
 {
-    struct litho_hs hs;
+    struct hs_hs hs;
     uint64_t phase_out = 0;
-    struct litho_published snap;
+    struct hs_published snap;
 
     CHECK(setup_scoreboard(&hs, 3) == 0, "setup for poll");
-    CHECK(!litho_hs_can_tick(&hs, 0, &phase_out), "no tick before publish");
-    CHECK(!litho_hs_poll_phase(&hs, 0, 0, &snap), "no poll before publish");
-    CHECK(litho_hs_run_phase(&hs, 0, 0, 0), "one phase");
-    CHECK(litho_hs_commit_epoch(&hs) == 1, "epoch 1");
-    CHECK(litho_hs_ledger_hash(&hs) != 0xcbf29ce484222325ull, "hash moved");
-    litho_hs_fini(&hs);
+    CHECK(!hs_hs_can_tick(&hs, 0, &phase_out), "no tick before publish");
+    CHECK(!hs_hs_poll_phase(&hs, 0, 0, &snap), "no poll before publish");
+    CHECK(hs_hs_run_phase(&hs, 0, 0, 0), "one phase");
+    CHECK(hs_hs_commit_epoch(&hs) == 1, "epoch 1");
+    CHECK(hs_hs_ledger_hash(&hs) != 0xcbf29ce484222325ull, "hash moved");
+    hs_hs_fini(&hs);
 }
 
 static void test_freeze_and_reset(void)
 {
-    struct litho_hs hs;
-    struct litho_hs_config cfg;
-    struct litho_hs_comp_desc d;
-    struct litho_freeze fr;
+    struct hs_hs hs;
+    struct hs_hs_config cfg;
+    struct hs_hs_comp_desc d;
+    struct hs_freeze fr;
     int sleep_ms = 400;
 
-    litho_hs_default_config(&cfg);
+    hs_hs_default_config(&cfg);
     cfg.worker_threads = 1;
     cfg.watchdog_ceiling_ns = 250000000ull;
-    CHECK(litho_hs_init(&hs, &cfg) == 0, "init freeze");
+    CHECK(hs_hs_init(&hs, &cfg) == 0, "init freeze");
 
     memset(&d, 0, sizeof(d));
     d.name = "sleepy";
-    d.cadence = LITHO_CADENCE_EVERY_PHASE;
+    d.cadence = HS_CADENCE_EVERY_PHASE;
     d.tick_critical = true;
-    CHECK(litho_hs_register(&hs, &d, work_sleepy, &sleep_ms) != UINT32_MAX, "reg sleepy");
-    CHECK(litho_hs_start(&hs) == 0, "start freeze");
+    CHECK(hs_hs_register(&hs, &d, work_sleepy, &sleep_ms) != UINT32_MAX, "reg sleepy");
+    CHECK(hs_hs_start(&hs) == 0, "start freeze");
 
-    CHECK(!litho_hs_run_phase(&hs, 0, 0, 0), "watchdog must FREEZE");
-    CHECK(litho_hs_frozen(&hs), "frozen latch");
-    litho_hs_last_freeze(&hs, &fr);
+    CHECK(!hs_hs_run_phase(&hs, 0, 0, 0), "watchdog must FREEZE");
+    CHECK(hs_hs_frozen(&hs), "frozen latch");
+    hs_hs_last_freeze(&hs, &fr);
     CHECK(strcmp(fr.component_name, "sleepy") == 0, "names offender, got '%s'", fr.component_name);
     CHECK(fr.ceiling_ns == 250000000ull, "ceiling 250 ms");
     CHECK(fr.elapsed_ns >= fr.ceiling_ns, "elapsed past ceiling");
-    CHECK(!litho_hs_run_phase(&hs, 1, 0, 0), "stays frozen until reset");
+    CHECK(!hs_hs_run_phase(&hs, 1, 0, 0), "stays frozen until reset");
 
-    litho_hs_reset_after_freeze(&hs);
-    CHECK(!litho_hs_frozen(&hs), "latch cleared");
+    hs_hs_reset_after_freeze(&hs);
+    CHECK(!hs_hs_frozen(&hs), "latch cleared");
 
     /* After reset, a fast component must be able to commit. Replace by
        stopping and registering a fast path on a fresh authority. */
-    litho_hs_stop(&hs);
-    litho_hs_fini(&hs);
+    hs_hs_stop(&hs);
+    hs_hs_fini(&hs);
 
-    litho_hs_default_config(&cfg);
+    hs_hs_default_config(&cfg);
     cfg.worker_threads = 1;
-    CHECK(litho_hs_init(&hs, &cfg) == 0, "reinit after freeze");
+    CHECK(hs_hs_init(&hs, &cfg) == 0, "reinit after freeze");
     memset(&d, 0, sizeof(d));
     d.name = "fast";
-    d.cadence = LITHO_CADENCE_EVERY_PHASE;
+    d.cadence = HS_CADENCE_EVERY_PHASE;
     d.tick_critical = true;
-    CHECK(litho_hs_register(&hs, &d, work_serial, NULL) != UINT32_MAX, "reg fast");
-    CHECK(litho_hs_start(&hs) == 0, "start fast");
-    CHECK(litho_hs_run_phase(&hs, 0, 0, 0), "runs after a generation bump world");
-    CHECK(litho_hs_commit_epoch(&hs) == 1, "committed");
-    litho_hs_fini(&hs);
+    CHECK(hs_hs_register(&hs, &d, work_serial, NULL) != UINT32_MAX, "reg fast");
+    CHECK(hs_hs_start(&hs) == 0, "start fast");
+    CHECK(hs_hs_run_phase(&hs, 0, 0, 0), "runs after a generation bump world");
+    CHECK(hs_hs_commit_epoch(&hs) == 1, "committed");
+    hs_hs_fini(&hs);
 }
 
 static void test_wait_does_not_skip(void)
 {
     /* A slightly slow worker still commits the phase (WAIT, not skip). */
-    struct litho_hs hs;
-    struct litho_hs_config cfg;
-    struct litho_hs_comp_desc d;
+    struct hs_hs hs;
+    struct hs_hs_config cfg;
+    struct hs_hs_comp_desc d;
     int sleep_ms = 20;
 
-    litho_hs_default_config(&cfg);
+    hs_hs_default_config(&cfg);
     cfg.worker_threads = 1;
     cfg.phase_budget_ns = 1000000ull; /* 1 ms budget: this will overrun */
-    cfg.watchdog_ceiling_ns = LITHO_HS_DEFAULT_CEILING_NS;
-    CHECK(litho_hs_init(&hs, &cfg) == 0, "init wait");
+    cfg.watchdog_ceiling_ns = HS_HS_DEFAULT_CEILING_NS;
+    CHECK(hs_hs_init(&hs, &cfg) == 0, "init wait");
     memset(&d, 0, sizeof(d));
     d.name = "slowish";
-    d.cadence = LITHO_CADENCE_EVERY_PHASE;
+    d.cadence = HS_CADENCE_EVERY_PHASE;
     d.tick_critical = true;
-    CHECK(litho_hs_register(&hs, &d, work_sleepy, &sleep_ms) != UINT32_MAX, "reg");
-    CHECK(litho_hs_start(&hs) == 0, "start");
-    CHECK(litho_hs_run_phase(&hs, 0, 0, 0), "WAIT extends, phase still commits");
-    CHECK(litho_hs_commit_epoch(&hs) == 1, "not skipped");
+    CHECK(hs_hs_register(&hs, &d, work_sleepy, &sleep_ms) != UINT32_MAX, "reg");
+    CHECK(hs_hs_start(&hs) == 0, "start");
+    CHECK(hs_hs_run_phase(&hs, 0, 0, 0), "WAIT extends, phase still commits");
+    CHECK(hs_hs_commit_epoch(&hs) == 1, "not skipped");
     {
-        struct litho_hs_stats st;
-        litho_hs_stats(&hs, &st);
+        struct hs_hs_stats st;
+        hs_hs_stats(&hs, &st);
         CHECK(st.overrun_phases == 1, "overrun counted, not hidden");
     }
-    litho_hs_fini(&hs);
+    hs_hs_fini(&hs);
 }
 
-static uint64_t run_once(int workers, struct litho_jitter_stats *jit, uint64_t *epoch, uint64_t *mono)
+static uint64_t run_once(int workers, struct hs_jitter_stats *jit, uint64_t *epoch, uint64_t *mono)
 {
-    struct litho_hs hs;
+    struct hs_hs hs;
     uint64_t hash;
 
     CHECK(setup_scoreboard(&hs, workers) == 0, "setup workers=%d", workers);
     hash = run_scoreboard(&hs);
     if (epoch) {
-        *epoch = litho_hs_commit_epoch(&hs);
+        *epoch = hs_hs_commit_epoch(&hs);
     }
     if (mono) {
-        *mono = litho_hs_monatomic(&hs);
+        *mono = hs_hs_monatomic(&hs);
     }
     if (jit) {
-        litho_hs_jitter(&hs, jit);
+        hs_hs_jitter(&hs, jit);
     }
-    litho_hs_fini(&hs);
+    hs_hs_fini(&hs);
     return hash;
 }
 
-static void test_scoreboard_100(uint64_t *out_hash, struct litho_jitter_stats *out_jit)
+static void test_scoreboard_100(uint64_t *out_hash, struct hs_jitter_stats *out_jit)
 {
     const int runs = 100;
     uint64_t hashes[100];
     uint64_t first, epoch = 0, mono = 0;
-    struct litho_jitter_stats jit;
+    struct hs_jitter_stats jit;
     int i, same;
 
     memset(&jit, 0, sizeof(jit));
@@ -337,10 +337,10 @@ static void test_worker_invariance(uint64_t expected)
 int main(void)
 {
     uint64_t hash = 0;
-    struct litho_jitter_stats jit;
+    struct hs_jitter_stats jit;
 
     memset(&jit, 0, sizeof(jit));
-    printf("LithoOS Timing Handshake tests\n");
+    printf("HandshakeOS Timing Handshake tests\n");
     printf("pillars: Time Serialization, control coupling, event coupling\n");
     printf("beats: publish, pull, barrier, commit\n");
 

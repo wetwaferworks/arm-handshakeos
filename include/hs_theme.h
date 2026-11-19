@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: MIT */
-#ifndef LITHO_THEME_H
-#define LITHO_THEME_H
+#ifndef HS_THEME_H
+#define HS_THEME_H
 
 #include <stdint.h>
 
 typedef enum {
-    LITHO_THEME_PURPLE = 0,
-    LITHO_THEME_GREEN  = 1,
-    LITHO_THEME_COUNT
-} litho_theme_id_t;
+    HS_THEME_PURPLE = 0,
+    HS_THEME_GREEN  = 1,
+    HS_THEME_COUNT
+} hs_theme_id_t;
 
-struct litho_palette {
+struct hs_palette {
     const char *name;
     const char *short_name;
     uint32_t bg;
@@ -30,13 +30,13 @@ struct litho_palette {
     uint32_t good;
 };
 
-static inline uint32_t litho_rgb(uint8_t r, uint8_t g, uint8_t b)
+static inline uint32_t hs_rgb(uint8_t r, uint8_t g, uint8_t b)
 {
     return ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
 
-const struct litho_palette *litho_theme_get(litho_theme_id_t id);
-litho_theme_id_t litho_theme_next(litho_theme_id_t id);
-litho_theme_id_t litho_theme_prev(litho_theme_id_t id);
+const struct hs_palette *hs_theme_get(hs_theme_id_t id);
+hs_theme_id_t hs_theme_next(hs_theme_id_t id);
+hs_theme_id_t hs_theme_prev(hs_theme_id_t id);
 
-#endif /* LITHO_THEME_H */
+#endif /* HS_THEME_H */

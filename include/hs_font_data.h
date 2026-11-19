@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: MIT */
-/* Original LithoOS 8x8 bitmap font, ASCII 32-126. MSB is the leftmost pixel. */
-#ifndef LITHO_FONT_DATA_H
-#define LITHO_FONT_DATA_H
+/* Original HandshakeOS 8x8 bitmap font, ASCII 32-126. MSB is the leftmost pixel. */
+#ifndef HS_FONT_DATA_H
+#define HS_FONT_DATA_H
 
 #include <stdint.h>
 
-#define LITHO_FONT_FIRST 32
-#define LITHO_FONT_LAST  126
-#define LITHO_FONT_W     8
-#define LITHO_FONT_H     8
+#define HS_FONT_FIRST 32
+#define HS_FONT_LAST  126
+#define HS_FONT_W     8
+#define HS_FONT_H     8
 
-static const uint8_t litho_font8[95][8] = {
+static const uint8_t hs_font8[95][8] = {
     /*  32   */ {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
     /*  33 ! */ {0x30, 0x30, 0x30, 0x30, 0x30, 0x00, 0x30, 0x00},
     /*  34 " */ {0x6C, 0x6C, 0x48, 0x00, 0x00, 0x00, 0x00, 0x00},
@@ -108,4 +108,4 @@ static const uint8_t litho_font8[95][8] = {
     /* 126 ~ */ {0x00, 0x00, 0x62, 0xDA, 0x8C, 0x00, 0x00, 0x00},
 };
 
-#endif /* LITHO_FONT_DATA_H */
+#endif /* HS_FONT_DATA_H */

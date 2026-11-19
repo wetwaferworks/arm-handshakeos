@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: MIT */
-#ifndef LITHO_HANDSHAKE_H
-#define LITHO_HANDSHAKE_H
+#ifndef HS_HANDSHAKE_H
+#define HS_HANDSHAKE_H
 
 /*
- * LithoOS Timing Handshake (pure C11)
+ * HandshakeOS Timing Handshake (pure C11)
  *
  * Three pillars only: Time Serialization, control coupling, event coupling.
  * A fourth has not been received. This is not the Thread Handshake.
@@ -26,30 +26,30 @@
 #include <stdint.h>
 #include <stdatomic.h>
 
-#define LITHO_HS_MAX_WORKERS     8
-#define LITHO_HS_MAX_COMPS       32
-#define LITHO_HS_MAX_EVENTS      256
-#define LITHO_HS_NAME_MAX        64
-#define LITHO_HS_SAMPLES_MAX     8192
-#define LITHO_HS_HIST_BINS       12
-#define LITHO_HS_DEFAULT_CEILING_NS 250000000ull  /* 250 ms */
-#define LITHO_HS_ALL_GROUPS      0xFFFFFFFFu
+#define HS_HS_MAX_WORKERS     8
+#define HS_HS_MAX_COMPS       32
+#define HS_HS_MAX_EVENTS      256
+#define HS_HS_NAME_MAX        64
+#define HS_HS_SAMPLES_MAX     8192
+#define HS_HS_HIST_BINS       12
+#define HS_HS_DEFAULT_CEILING_NS 250000000ull  /* 250 ms */
+#define HS_HS_ALL_GROUPS      0xFFFFFFFFu
 
 typedef enum {
-    LITHO_CADENCE_EVERY_PHASE = 0,
-    LITHO_CADENCE_HALF_CYCLE  = 1,
-    LITHO_CADENCE_CYCLE_HEAD  = 2
-} litho_cadence_t;
+    HS_CADENCE_EVERY_PHASE = 0,
+    HS_CADENCE_HALF_CYCLE  = 1,
+    HS_CADENCE_CYCLE_HEAD  = 2
+} hs_cadence_t;
 
 typedef enum {
-    LITHO_BEAT_IDLE    = 0,
-    LITHO_BEAT_PUBLISH = 1,
-    LITHO_BEAT_PULL    = 2,
-    LITHO_BEAT_BARRIER = 3,
-    LITHO_BEAT_COMMIT  = 4
-} litho_beat_t;
+    HS_BEAT_IDLE    = 0,
+    HS_BEAT_PUBLISH = 1,
+    HS_BEAT_PULL    = 2,
+    HS_BEAT_BARRIER = 3,
+    HS_BEAT_COMMIT  = 4
+} hs_beat_t;
 
-struct litho_published {
+struct hs_published {
     uint64_t seq;
     uint64_t generation;
     uint64_t phase;
@@ -59,9 +59,9 @@ struct litho_published {
     bool     due_work;
 };
 
-struct litho_freeze {
+struct hs_freeze {
     uint32_t component_id;
-    char     component_name[LITHO_HS_NAME_MAX];
+    char     component_name[HS_HS_NAME_MAX];
     uint64_t phase;
     uint64_t cycle;
     uint64_t open_stamp_ns;
@@ -70,9 +70,9 @@ struct litho_freeze {
     uint64_t ceiling_ns;
 };
 
-struct litho_hs_comp_desc {
+struct hs_hs_comp_desc {
     const char    *name;
-    litho_cadence_t cadence;
+    hs_cadence_t cadence;
     uint32_t       phase_divider; /* 0 = cadence decides; nonzero wins */
     uint32_t       phase_offset;
     bool           affine;        /* runs on the clock thread */
@@ -81,9 +81,9 @@ struct litho_hs_comp_desc {
 };
 
 /* Return value is folded into the ledger at commit, in component-id order. */
-typedef uint64_t (*litho_hs_work_fn)(uint64_t phase, uint64_t cycle, void *user);
+typedef uint64_t (*hs_hs_work_fn)(uint64_t phase, uint64_t cycle, void *user);
 
-struct litho_hs_config {
+struct hs_hs_config {
     int      phases_per_cycle;     /* 1..64, default 4 */
     int      worker_threads;       /* 0 = 3 (the 3+1 seating) */
     uint64_t phase_budget_ns;      /* 0 = overrun accounting off */
@@ -92,15 +92,15 @@ struct litho_hs_config {
     bool     ledger;               /* default true */
 };
 
-struct litho_ctrl_event {
+struct hs_ctrl_event {
     uint64_t seq;
     uint64_t tick;
     uint32_t code;
     uint32_t value;
 };
 
-struct litho_comp_stats {
-    char     name[LITHO_HS_NAME_MAX];
+struct hs_comp_stats {
+    char     name[HS_HS_NAME_MAX];
     uint64_t fires;
     uint64_t overruns;
     uint64_t max_work_ns;
@@ -108,7 +108,7 @@ struct litho_comp_stats {
     bool     repeat_offender;
 };
 
-struct litho_jitter_stats {
+struct hs_jitter_stats {
     uint64_t count;
     uint64_t period_ns;
     uint64_t ticks_done;     /* committed phases */
@@ -120,27 +120,27 @@ struct litho_jitter_stats {
     int64_t  max_ns;
     int64_t  min_ns;
     int64_t  mean_ns;
-    uint32_t hist[LITHO_HS_HIST_BINS];
+    uint32_t hist[HS_HS_HIST_BINS];
 };
 
-struct litho_hs_stats {
+struct hs_hs_stats {
     uint64_t phases;
     uint64_t overrun_phases;
     uint64_t overrun_ns_total;
     uint64_t barrier_wait_ns_total;
     uint64_t freezes;
     uint32_t n_comps;
-    struct litho_comp_stats comps[LITHO_HS_MAX_COMPS];
-    struct litho_jitter_stats jitter;
+    struct hs_comp_stats comps[HS_HS_MAX_COMPS];
+    struct hs_jitter_stats jitter;
 };
 
 /* Internal component slot. Callers must not write these fields. */
-struct litho_hs_slot {
-    struct litho_hs_comp_desc desc;
-    litho_hs_work_fn fn;
+struct hs_hs_slot {
+    struct hs_hs_comp_desc desc;
+    hs_hs_work_fn fn;
     void    *user;
     int      shard;
-    char     name[LITHO_HS_NAME_MAX];
+    char     name[HS_HS_NAME_MAX];
     uint32_t id;
     _Atomic uint64_t start_stamp_ns;
     _Atomic uint64_t duration_ns;
@@ -155,14 +155,14 @@ struct litho_hs_slot {
     bool     repeat_offender;
 };
 
-struct litho_hs {
-    struct litho_hs_config cfg;
+struct hs_hs {
+    struct hs_hs_config cfg;
     uint64_t ceiling_ns;
     int      worker_count;
     int      n_comps;
     int      running;
     int      stop;
-    struct litho_hs_slot comps[LITHO_HS_MAX_COMPS];
+    struct hs_hs_slot comps[HS_HS_MAX_COMPS];
 
     /* Publication (clock thread writes, workers seqlock-read). */
     _Atomic uint64_t pub_seq;        /* seqlock: odd = write in progress */
@@ -185,18 +185,18 @@ struct litho_hs {
     _Atomic uint32_t barrier_word;   /* futex word for the clock thread */
     _Atomic uint32_t stop_word;
 
-    struct litho_freeze last_freeze;
+    struct hs_freeze last_freeze;
 
     /* Control coupling: stamped (seq, tick) stream, drained in PRE. */
     uint32_t n_events;
     uint32_t events_applied;
-    struct litho_ctrl_event events[LITHO_HS_MAX_EVENTS];
+    struct hs_ctrl_event events[HS_HS_MAX_EVENTS];
     uint64_t control_fold;
     uint64_t event_fold;
 
     /* Jitter of phase open-to-commit (WAIT-extended duration). */
     uint32_t sample_count;
-    int64_t  samples[LITHO_HS_SAMPLES_MAX];
+    int64_t  samples[HS_HS_SAMPLES_MAX];
     uint64_t overrun_phases;
     uint64_t overrun_ns_total;
     uint64_t barrier_wait_ns_total;
@@ -204,54 +204,54 @@ struct litho_hs {
     uint64_t phases_done;
 
     /* Worker threads (pthread, but the handshake itself has no mutex). */
-    void    *worker_threads[LITHO_HS_MAX_WORKERS];
-    uint64_t shard_seen[LITHO_HS_MAX_WORKERS];
+    void    *worker_threads[HS_HS_MAX_WORKERS];
+    uint64_t shard_seen[HS_HS_MAX_WORKERS];
     /* Boot args for worker threads (pointer stays valid for the thread's life). */
     struct {
-        struct litho_hs *hs;
+        struct hs_hs *hs;
         uint32_t         shard;
-    } boot[LITHO_HS_MAX_WORKERS];
+    } boot[HS_HS_MAX_WORKERS];
 };
 
-void litho_hs_default_config(struct litho_hs_config *cfg);
-int  litho_hs_init(struct litho_hs *hs, const struct litho_hs_config *cfg);
-void litho_hs_fini(struct litho_hs *hs);
+void hs_hs_default_config(struct hs_hs_config *cfg);
+int  hs_hs_init(struct hs_hs *hs, const struct hs_hs_config *cfg);
+void hs_hs_fini(struct hs_hs *hs);
 
-uint32_t litho_hs_register(struct litho_hs *hs,
-                           const struct litho_hs_comp_desc *desc,
-                           litho_hs_work_fn fn, void *user);
+uint32_t hs_hs_register(struct hs_hs *hs,
+                           const struct hs_hs_comp_desc *desc,
+                           hs_hs_work_fn fn, void *user);
 
-int  litho_hs_start(struct litho_hs *hs);
-void litho_hs_stop(struct litho_hs *hs);
+int  hs_hs_start(struct hs_hs *hs);
+void hs_hs_stop(struct hs_hs *hs);
 
 /* Clock thread: publish, wait at the barrier (WAIT / FREEZE), commit. */
-bool litho_hs_run_phase(struct litho_hs *hs, uint64_t phase, uint64_t cycle, uint32_t group);
+bool hs_hs_run_phase(struct hs_hs *hs, uint64_t phase, uint64_t cycle, uint32_t group);
 
-bool litho_hs_poll_phase(const struct litho_hs *hs, uint32_t shard,
-                         uint64_t seen_seq, struct litho_published *out);
-bool litho_hs_can_tick(const struct litho_hs *hs, uint32_t shard, uint64_t *phase_out);
+bool hs_hs_poll_phase(const struct hs_hs *hs, uint32_t shard,
+                         uint64_t seen_seq, struct hs_published *out);
+bool hs_hs_can_tick(const struct hs_hs *hs, uint32_t shard, uint64_t *phase_out);
 
-bool litho_hs_frozen(const struct litho_hs *hs);
-void litho_hs_last_freeze(const struct litho_hs *hs, struct litho_freeze *out);
-void litho_hs_reset_after_freeze(struct litho_hs *hs);
+bool hs_hs_frozen(const struct hs_hs *hs);
+void hs_hs_last_freeze(const struct hs_hs *hs, struct hs_freeze *out);
+void hs_hs_reset_after_freeze(struct hs_hs *hs);
 
-uint64_t    litho_hs_commit_epoch(const struct litho_hs *hs);
-uint64_t    litho_hs_ledger_hash(const struct litho_hs *hs);
-uint64_t    litho_hs_monatomic(const struct litho_hs *hs);
-litho_beat_t litho_hs_beat(const struct litho_hs *hs);
-int         litho_hs_worker_count(const struct litho_hs *hs);
+uint64_t    hs_hs_commit_epoch(const struct hs_hs *hs);
+uint64_t    hs_hs_ledger_hash(const struct hs_hs *hs);
+uint64_t    hs_hs_monatomic(const struct hs_hs *hs);
+hs_beat_t hs_hs_beat(const struct hs_hs *hs);
+int         hs_hs_worker_count(const struct hs_hs *hs);
 
-void litho_hs_stats(const struct litho_hs *hs, struct litho_hs_stats *out);
-void litho_hs_jitter(const struct litho_hs *hs, struct litho_jitter_stats *out);
+void hs_hs_stats(const struct hs_hs *hs, struct hs_hs_stats *out);
+void hs_hs_jitter(const struct hs_hs *hs, struct hs_jitter_stats *out);
 
 /* Control coupling: stamp events before start, or from the clock thread. */
-int  litho_hs_post_event(struct litho_hs *hs, uint64_t tick, uint32_t code, uint32_t value);
+int  hs_hs_post_event(struct hs_hs *hs, uint64_t tick, uint32_t code, uint32_t value);
 /* Event coupling helper used at commit: apply matured events in (tick, seq) order. */
-uint64_t litho_hs_apply_matured(struct litho_hs *hs, uint64_t cycle);
+uint64_t hs_hs_apply_matured(struct hs_hs *hs, uint64_t cycle);
 
-const char *litho_beat_name(litho_beat_t beat);
-const char *litho_hist_bin_label(unsigned bin);
-uint64_t    litho_now_ns(void);
-uint64_t    litho_fnv1a64(uint64_t hash, uint64_t word);
+const char *hs_beat_name(hs_beat_t beat);
+const char *hs_hist_bin_label(unsigned bin);
+uint64_t    hs_now_ns(void);
+uint64_t    hs_fnv1a64(uint64_t hash, uint64_t word);
 
-#endif /* LITHO_HANDSHAKE_H */
+#endif /* HS_HANDSHAKE_H */

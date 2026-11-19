@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a gzipped newc initramfs with litho-init as /init and /dev/console."""
+"""Build a gzipped newc initramfs with handshake-init as /init and /dev/console."""
 import gzip
 import os
 import sys
@@ -57,7 +57,7 @@ def main():
     with open(init, "rb") as f:
         add(entries, "init", f.read(), mode=0o100755)
     with open(rom, "rb") as f:
-        add(entries, "roms/litho-demo.gb", f.read(), mode=0o100644)
+        add(entries, "roms/handshake-demo.gb", f.read(), mode=0o100644)
     add(entries, "TRAILER!!!", data=b"", mode=0)
     blob = b"".join(entries)
     parent = os.path.dirname(out_path)
