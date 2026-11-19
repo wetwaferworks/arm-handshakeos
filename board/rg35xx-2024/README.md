@@ -40,3 +40,17 @@ Userland: `make cross` in the repo root produces static `build/aarch64/litho-ini
 - Build TF-A, U-Boot, and the kernel with `--fetch`.
 - Assemble an SD image: SPL at 8 KiB, FAT boot (Image + dtb + extlinux), ext4 root with `litho-init` as `/init`.
 - First boot goal: the panel shows the purple or green handshake screen, and the D-pad moves the tile highlight.
+
+## QEMU virt (done) vs. a flashable RG35XX `.img` (not this pass)
+
+A real ARM64 Linux 6.12 kernel already boots in `qemu-system-aarch64` with static `litho-init` as PID 1 and prints both handshake ledgers to the serial console. See [`board/qemu-virt/run-pid1.sh`](../qemu-virt/run-pid1.sh) and the captured excerpt in [`board/qemu-virt/pid1-serial.txt`](../qemu-virt/pid1-serial.txt).
+
+The ready-to-flash H700 SD image is **not** built yet. Vanilla mainline still lacks the RG35XX 2024 LCD, HDMI, MMC1, and USB OTG host wiring; those come from the ROCKNIX (GPL-2.0) patch set and need care. Fetching TF-A, U-Boot, and a patched 6.12+ kernel also overruns a short session and the remaining ~32 GB disk budget if sources and object trees land together.
+
+Exact remaining steps for `lithoos-rg35xx-2024.img`:
+
+1. On a Linux box with ~40 GB free, back up the stock card first (`windows-backup-stock-sd.ps1` or `dd` + SHA-256). LithoOS only ever goes on a second card.
+2. `./board/rg35xx-2024/build-bootstack.sh --fetch` to get TF-A (`PLAT=sun50i_h616`), mainline U-Boot `anbernic_rg35xx_h700_defconfig` (LPDDR4), and Linux ≥ 6.12.
+3. Apply the ROCKNIX H700 patches listed in `patches/README.md` (LCD / HDMI / MMC1 / OTG). Record the source commits. Build `sun50i-h700-anbernic-rg35xx-2024.dtb` (rev6 panel variant on hand).
+4. Assemble the SD image: SPL at 8 KiB (`dd … seek=8 bs=1024` of `u-boot-sunxi-with-spl.bin`), FAT boot partition (`Image`, dtb, extlinux `console=ttyS0,115200`), ext4 root with static `litho-init` as `/init`, `litho-gb`, and `roms/litho-demo.gb`.
+5. SHA-256 the `.img`. Copy it to `D:\scratch\lithoos\` on TheWorkstation to flash when home. The handheld does not enumerate over USB under stock firmware, so the card has to be written in a reader.

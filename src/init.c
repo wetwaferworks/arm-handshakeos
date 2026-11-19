@@ -8,6 +8,7 @@
 #include "litho_input.h"
 #include "litho_scoreboard.h"
 #include "litho_ui.h"
+#include "litho_gb.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -28,7 +29,9 @@ static void usage(const char *argv0)
             "  --snapshot-both[=DIR]   write preview-purple.png and preview-green.png\n"
             "  --workers=N             default 3 (the 3+1 seating)\n"
             "  --as-init               mount proc/sys/dev (when pid 1)\n"
-            "  --once                  run the scoreboard, draw one frame, exit\n",
+            "  --once                  run the scoreboard, draw one frame, exit\n"
+            "  --serial-scoreboard     print handshake (and GB) ledger to console\n"
+            "  --rom=PATH.gb           optional ROM for a PID-1 / serial GB run\n",
             argv0);
 }
 
@@ -49,6 +52,41 @@ static int mount_essentials(void)
     (void)mount("sysfs", "/sys", "sysfs", 0, NULL);
     (void)mount("devtmpfs", "/dev", "devtmpfs", 0, NULL);
     return 0;
+}
+
+
+static void say(const char *msg)
+{
+    FILE *c = fopen("/dev/console", "w");
+
+    /* One stream only: on virt, stdout, stderr, and /dev/console are the
+       same UART, and writing all three triples the banner. */
+    if (c != NULL) {
+        fputs(msg, c);
+        fflush(c);
+        fclose(c);
+        return;
+    }
+    fputs(msg, stdout);
+    fflush(stdout);
+}
+
+static int cmdline_has(const char *key)
+{
+    char buf[4096];
+    FILE *fp = fopen("/proc/cmdline", "r");
+    size_t n;
+
+    if (fp == NULL) {
+        return 0;
+    }
+    n = fread(buf, 1, sizeof(buf) - 1, fp);
+    fclose(fp);
+    if (n == 0) {
+        return 0;
+    }
+    buf[n] = '\0';
+    return strstr(buf, key) != NULL;
 }
 
 static void do_power(litho_action_t act, int as_init)
@@ -91,7 +129,9 @@ int main(int argc, char **argv)
     int snap_both = 0;
     int as_init = 0;
     int once = 0;
+    int serial_sb = 0;
     int workers = 3;
+    const char *rom = NULL;
     litho_theme_id_t theme = LITHO_THEME_PURPLE;
     int i;
     struct litho_fb fb;
@@ -125,6 +165,10 @@ int main(int argc, char **argv)
             as_init = 1;
         } else if (strcmp(argv[i], "--once") == 0) {
             once = 1;
+        } else if (strcmp(argv[i], "--serial-scoreboard") == 0) {
+            serial_sb = 1;
+        } else if (strncmp(argv[i], "--rom=", 6) == 0) {
+            rom = argv[i] + 6;
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             usage(argv[0]);
             return 0;
@@ -138,6 +182,21 @@ int main(int argc, char **argv)
     if (as_init || getpid() == 1) {
         as_init = 1;
         mount_essentials();
+        if (cmdline_has("litho.serial") || cmdline_has("litho.once")) {
+            serial_sb = 1;
+        }
+        if (cmdline_has("litho.once")) {
+            once = 1;
+        }
+        if (rom == NULL) {
+            /* Prefer a packed legal demo ROM when we are PID 1. */
+            if (access("/roms/litho-demo.gb", R_OK) == 0) {
+                rom = "/roms/litho-demo.gb";
+            } else if (access("roms/litho-demo.gb", R_OK) == 0) {
+                rom = "roms/litho-demo.gb";
+            }
+        }
+        serial_sb = 1;
     }
 
     /* Host snapshots always go through the headless backend so we get a
@@ -167,6 +226,53 @@ int main(int argc, char **argv)
             litho_hs_worker_count(&hs),
             (long long)jit.p50_ns,
             (unsigned long long)jit.overruns);
+
+    if (serial_sb) {
+        char line[512];
+        struct litho_gb_stats gs;
+
+        snprintf(line, sizeof(line),
+                 "\n======== LithoOS PID %d ========\n"
+                 "Timing Handshake 3+1\n"
+                 "ledger %016llx\n"
+                 "epoch  %llu\n"
+                 "workers %d\n"
+                 "overruns %llu\n",
+                 (int)getpid(),
+                 (unsigned long long)hash,
+                 (unsigned long long)litho_hs_commit_epoch(&hs),
+                 litho_hs_worker_count(&hs),
+                 (unsigned long long)jit.overruns);
+        say(line);
+
+        if (rom != NULL) {
+            memset(&gs, 0, sizeof(gs));
+            if (litho_gb_scoreboard(rom, workers, 90, &gs) == 0) {
+                snprintf(line, sizeof(line),
+                         "GB rom %s\n"
+                         "GB ledger %016llx\n"
+                         "GB frame  %016llx\n"
+                         "GB audio  %016llx\n"
+                         "GB xruns  %llu\n"
+                         "GB overruns %llu\n",
+                         rom,
+                         (unsigned long long)gs.ledger_hash,
+                         (unsigned long long)gs.frame_crc,
+                         (unsigned long long)gs.audio_crc,
+                         (unsigned long long)gs.xruns,
+                         (unsigned long long)gs.overruns);
+                say(line);
+            } else {
+                say("GB scoreboard failed\n");
+            }
+        }
+        say("================================\n");
+        if (as_init && once) {
+            /* QEMU proof: print, then reboot so -no-reboot exits cleanly. */
+            sync();
+            reboot(RB_AUTOBOOT);
+        }
+    }
 
     litho_ui_init(&ui, theme);
     litho_battery_clear(&bat);

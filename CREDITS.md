@@ -27,3 +27,9 @@ The Timing Handshake and the Litho OS proof plan sit on this reading list, recor
 - **muOS / MustardOS** — aesthetic inspiration only for a lean 640×480 C interface. Zero code copied. Their frontend is GPL-3.0; LithoOS userland is a clean-room MIT implementation.
 
 The LithoLattice Timing Handshake reference (public tree, commit `50b5868`, 18 November 2026) is the mechanism this userspace authority is aligned to, rewritten in pure C11 for LithoOS. The Thread Handshake (a different layer, dated 26 October 2026) is not part of this project and is never conflated with the Timing Handshake.
+
+## Game Boy emulator and legal ROMs
+
+- **Peanut-GB** — Mahyar Koshkouei, 2018–2023, MIT. A single-header DMG core. Some LCD/APU paths follow SameBoy (Lior Halphon, MIT). Vendored as `third_party/peanut-gb/`. <https://github.com/deltabeard/Peanut-GB>
+- **minigb_apu** — Mahyar Koshkouei and Alex Baines (MiniGBS), MIT. Phase-boundary PCM snapshots for LithoOS (S16 stereo, 32768 Hz). Vendored as `third_party/minigb_apu/`.
+- **litho-demo.gb** — original MIT demo ROM for LithoOS, built by `tools/make_litho_demo_gb.py`. Title, border, bouncing gem, D-pad nudge, and an A-button beep. No third-party graphics or music.

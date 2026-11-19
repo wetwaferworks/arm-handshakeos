@@ -33,6 +33,8 @@ make            # host tools: litho-init, litho-test, litho-bench
 make test       # unit tests, 100-run scoreboard, worker-count fairness
 make bench      # jitter histogram
 make preview    # 640x480 Deep Purple and Matrix Green screenshots
+make preview-gb # running litho-demo.gb inside the Deep Purple shell
+make gb-test    # 100-run + 1/2/3/4-worker GB handshake scoreboard
 make cross      # static aarch64 binaries
 make verify-cross
 ```
@@ -75,12 +77,27 @@ Previews from this tree:
 
 - [`preview-purple.png`](preview-purple.png)
 - [`preview-green.png`](preview-green.png)
+- [`preview-gb-emu.png`](preview-gb-emu.png) — Peanut-GB running `roms/litho-demo.gb` under the 3+1 handshake, with the Gemstone dial, commit epoch, ledger hash, and audio xrun counter.
 
 ## Hardware and the open stack
 
 Target: **Anbernic RG35XX 2024**, base model. Allwinner H700, four Cortex-A53 cores, 1 GB LPDDR4, 640×480 LCD. No Wi-Fi, no Bluetooth. Data moves on the SD card or USB-C.
 
 The stack is open all the way down:
+
+## Game Boy loop (Peanut-GB)
+
+`litho-gb` runs a tiny MIT DMG core (Peanut-GB + minigb_apu) as a clock-thread-affine component of the Timing Handshake. Scripted or evdev buttons are stamped `(seq, tick)` before the phase and applied in `(tick, seq)` order when that tick matures. Each frame's 160×144 picture and its finished PCM snapshot are CRC'd and folded into the hash-chained commit ledger. There are no mutexes and no locks around audio: the snapshot is produced and consumed on the same phase boundary, so xruns stay at zero.
+
+The only ROM in `roms/` is `litho-demo.gb`, an original MIT demo. Commercial Game Boy software is never downloaded or shipped. See `roms/manifest.txt` and `CREDITS.md`.
+
+On this tree, 100 runs of 90 frames plus a 1 / 2 / 3 / 4 worker fairness gate all produced one ledger:
+
+`9e9c254b6cf9f79b`  (frame `7e0233d6a854a8a6`, audio `8c6078dd78fa5589`, xruns 0, overruns 0)
+
+Host and `qemu-aarch64-static` agree.
+
+A QEMU virt boot with a real ARM64 kernel and this tree's static `litho-init` as PID 1 is in `board/qemu-virt/run-pid1.sh`.
 
 - mainline Linux (≥ 6.12, so `sched_ext` is available for Phase 2)
 - mainline U-Boot, DDR4 config (`anbernic_rg35xx_h700_defconfig`)

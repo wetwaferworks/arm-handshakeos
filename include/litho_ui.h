@@ -51,4 +51,8 @@ litho_action_t litho_ui_activate(struct litho_ui *ui);
 litho_action_t litho_ui_cancel(struct litho_ui *ui);
 void           litho_ui_cycle_theme(struct litho_ui *ui, int dir);
 
+void litho_ui_draw_gemstone(struct litho_fb *fb, int cx, int cy, int radius,
+                            const struct litho_palette *pal,
+                            litho_beat_t beat, int frozen);
+
 #endif /* LITHO_UI_H */

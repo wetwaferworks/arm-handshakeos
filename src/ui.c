@@ -101,6 +101,13 @@ static void draw_gemstone(struct litho_fb *fb, int cx, int cy, int r,
     }
 }
 
+void litho_ui_draw_gemstone(struct litho_fb *fb, int cx, int cy, int radius,
+                            const struct litho_palette *pal,
+                            litho_beat_t beat, int frozen)
+{
+    draw_gemstone(fb, cx, cy, radius, pal, beat, frozen);
+}
+
 static void draw_battery_icon(struct litho_fb *fb, int x, int y, int w, int h,
                               int percent, const struct litho_palette *pal)
 {

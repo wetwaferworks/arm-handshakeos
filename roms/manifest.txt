@@ -1,0 +1,14 @@
+# Legal Game Boy ROMs shipped with LithoOS.
+# Commercial / copyrighted ROMs are never downloaded, stored, or committed.
+
+# file  sha256  license  author / notes
+litho-demo.gb  84ec0d4b04892ddef8fde2b0f2c1cd7df7662d3f35033f1a5fa4ad455dc1231c  MIT  Original LithoOS demo (title, border, bouncing gem, D-pad nudge, A beep). Built by tools/make_litho_demo_gb.py. No third-party assets.
+
+# Not included (license or official ROM not redistributable from here):
+# - Blargg cpu_instrs / instr_timing: widely used test ROMs, but the official
+#   readme does not grant a clear redistributable license, so they stay out of
+#   this tree. They can be run from a local copy if you already have them.
+# - Tobu Tobu Girl (MIT code, CC-BY 4.0 assets, Tangram Games / Simon Larsen):
+#   official ROM URLs were not reachable at packaging time.
+# - 2048-gb (zlib, Sanqui): official .gb host returned an error; source is
+#   public but we did not vendor a binary without a clean official build.
