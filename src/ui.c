@@ -177,7 +177,8 @@ void litho_ui_draw(struct litho_fb *fb,
 
     hero_x = margin;
     hero_y = bar_h + margin;
-    hero_w = fb->w - 2 * margin;
+    /* When reserve_gb is set, leave a 176px column on the right for a 160x144 bezel. */
+    hero_w = fb->w - 2 * margin - (ui->reserve_gb ? 176 : 0);
     hero_h = 196;
     litho_fb_fill_round(fb, hero_x + 2, hero_y + 2, hero_w, hero_h, 8, pal->shadow);
     litho_fb_fill_round(fb, hero_x, hero_y, hero_w, hero_h, 8, pal->tile);

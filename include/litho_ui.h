@@ -35,6 +35,7 @@ struct litho_ui {
     litho_tile_t     selected;
     litho_confirm_t  confirm;
     const char      *status_line;
+    int              reserve_gb; /* leave a right-hand column for a 160x144 GB bezel */
 };
 
 void litho_ui_init(struct litho_ui *ui, litho_theme_id_t theme);

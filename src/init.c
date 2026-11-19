@@ -142,6 +142,13 @@ int main(int argc, char **argv)
     struct litho_jitter_stats jit;
     uint64_t hash;
     int running = 1;
+    struct litho_gb *gb = NULL;
+    const uint32_t gbp[4] = {
+        0x00f4e8ffu,
+        0x00c084e0u,
+        0x00703aa8u,
+        0x001a0828u
+    };
 
     for (i = 1; i < argc; i++) {
         if (strncmp(argv[i], "--backend=", 10) == 0) {
@@ -302,6 +309,21 @@ int main(int argc, char **argv)
         return rc == 0 ? 0 : 1;
     }
 
+    /* Live glass: keep the Deep Purple shell up and blit the legal demo
+       ROM unless litho.once / --once asked us to print-and-exit. */
+    if (rom != NULL && !once) {
+        gb = litho_gb_create();
+        if (gb == NULL || litho_gb_load_rom(gb, rom) != 0 ||
+            litho_gb_start(gb, workers) != 0) {
+            if (gb != NULL) {
+                litho_gb_destroy(gb);
+                gb = NULL;
+            }
+        } else {
+            ui.reserve_gb = 1;
+        }
+    }
+
     while (running) {
         litho_action_t act = LITHO_ACTION_NONE;
 
@@ -343,6 +365,14 @@ int main(int argc, char **argv)
 
         litho_battery_read(&bat);
         litho_ui_draw(&fb, &ui, &hs, &jit, &bat);
+        if (gb != NULL) {
+            int gx = fb.w - 12 - 176 + 8;
+            int gy = 40 + 12 + 16;
+            (void)litho_gb_run_frames(gb, 1);
+            litho_gb_blit(&fb, gx, gy, 1, litho_gb_framebuffer(gb), gbp);
+            litho_fb_printf(&fb, gx, gy + LITHO_GB_H + 4, 1,
+                            litho_theme_get(ui.theme)->dim, "GB DEMO");
+        }
         litho_fb_flip(&fb);
 
         if (once) {
@@ -350,6 +380,10 @@ int main(int argc, char **argv)
         }
     }
 
+    if (gb != NULL) {
+        litho_gb_stop(gb);
+        litho_gb_destroy(gb);
+    }
     litho_input_close(&in);
     litho_hs_fini(&hs);
     litho_fb_close(&fb);
