@@ -51,6 +51,14 @@ struct hs_gb {
     int16_t  pcm[HS_GB_PCM_MAX];
     _Atomic  uint32_t pcm_ready; /* 1 = unconsumed snapshot */
     _Atomic  uint64_t xruns;
+    _Atomic  uint32_t live_mode; /* v3: 1 = joypad comes from hs_gb_set_joypad */
+    _Atomic  uint32_t live_joy;  /* v3: JOYPAD_* bits, 1 = pressed */
+    _Atomic  uint32_t sram_dirty;/* v3: battery RAM changed since last save */
+    /* v3-audio: live-mode PCM queue. Producer is work_gb (inside a phase),
+       consumer is the shell thread strictly between hs_gb_run_frames()
+       calls, so the handshake commit orders every access. */
+    uint32_t pcm_q_n;
+    int16_t  pcm_q[HS_GB_PCM_MAX * 16];
 
     uint8_t  joy_held; /* JOYPAD_* bits, 1 = pressed */
     int      started;
@@ -59,6 +67,7 @@ struct hs_gb {
     uint64_t frame_crc;
     uint64_t audio_crc;
     uint64_t frames_done;
+    uint64_t next_phase; /* v2: live calls continue the phase count */
 
     uint32_t n_script;
     struct { uint64_t tick; uint8_t mask; } script[HS_GB_SCRIPT_MAX];
@@ -91,7 +100,10 @@ static void cart_ram_write(struct gb_s *gb, const uint_fast32_t addr, const uint
     if (g->cart_ram == NULL || addr >= g->cart_ram_size) {
         return;
     }
-    g->cart_ram[addr] = val;
+    if (g->cart_ram[addr] != val) {
+        g->cart_ram[addr] = val;
+        atomic_store_explicit(&g->sram_dirty, 1u, memory_order_relaxed);
+    }
 }
 
 static void gb_err(struct gb_s *gb, const enum gb_error_e err, const uint16_t addr)
@@ -174,7 +186,11 @@ static uint64_t work_gb(uint64_t phase, uint64_t cycle, void *user)
     ev = hs_hs_apply_matured(&g->hs, phase);
     (void)ev;
     (void)cycle;
-    {
+    if (atomic_load_explicit(&g->live_mode, memory_order_acquire) != 0u) {
+        /* v3 live play: the PRE side stored the evdev joypad before this
+           phase was released, so the acquire load sees this frame's mask. */
+        g->joy_held = (uint8_t)atomic_load_explicit(&g->live_joy, memory_order_acquire);
+    } else {
         uint32_t i;
         for (i = 0; i < g->hs.n_events; i++) {
             if (g->hs.events[i].tick > phase) {
@@ -193,6 +209,13 @@ static uint64_t work_gb(uint64_t phase, uint64_t cycle, void *user)
     }
     minigb_apu_audio_callback(&g_apu, g->pcm);
     atomic_store_explicit(&g->pcm_ready, 1, memory_order_release);
+    if (atomic_load_explicit(&g->live_mode, memory_order_relaxed) != 0u) {
+        uint32_t n = AUDIO_SAMPLES_TOTAL <= HS_GB_PCM_MAX ? AUDIO_SAMPLES_TOTAL : HS_GB_PCM_MAX;
+        if (g->pcm_q_n + n <= (uint32_t)(sizeof(g->pcm_q) / sizeof(g->pcm_q[0]))) {
+            memcpy(&g->pcm_q[g->pcm_q_n], g->pcm, (size_t)n * sizeof(int16_t));
+            g->pcm_q_n += n;
+        }
+    }
 
     g->frame_crc = crc_frame(g);
     g->audio_crc = crc_audio(g->pcm, AUDIO_SAMPLES_TOTAL <= HS_GB_PCM_MAX
@@ -221,6 +244,9 @@ struct hs_gb *hs_gb_create(void)
     g->joy_held = 0;
     atomic_init(&g->pcm_ready, 0);
     atomic_init(&g->xruns, 0);
+    atomic_init(&g->live_mode, 0u);
+    atomic_init(&g->live_joy, 0u);
+    atomic_init(&g->sram_dirty, 0u);
     return g;
 }
 
@@ -420,10 +446,15 @@ int hs_gb_run_frames(struct hs_gb *g, uint64_t frames)
     if (g == NULL || !g->started) {
         return -EINVAL;
     }
+    /* v1 restarted at phase 0 on every call, so the live one-frame-per-call
+       loop replayed phase 0 forever. v2 continues the count; a single
+       N-frame scoreboard call is bit-identical to v1 (phases 0..N-1). */
     for (i = 0; i < frames; i++) {
-        if (!hs_hs_run_phase(&g->hs, i, i / (uint64_t)ppc, 0)) {
+        uint64_t ph = g->next_phase;
+        if (!hs_hs_run_phase(&g->hs, ph, ph / (uint64_t)ppc, 0)) {
             return -EIO;
         }
+        g->next_phase = ph + 1u;
         /* After commit, fold this frame's CRCs into the ledger again so
            the hash is unambiguously about the picture and the sound.
            run_phase already folded the work_gb return (frame_crc, audio_crc). */
@@ -518,23 +549,121 @@ int hs_gb_scoreboard(const char *rom_path, int workers, uint64_t frames,
 void hs_gb_blit(struct hs_fb *fb, int x, int y, int scale,
                    const uint8_t *fb160, const uint32_t pal[4])
 {
-    int sx, sy, px, py, i, j;
-    uint8_t shade;
+    int sx, sy, j;
 
-    if (fb == NULL || fb160 == NULL || pal == NULL || scale < 1) {
+    if (fb == NULL || fb->pix == NULL || fb160 == NULL || pal == NULL || scale < 1) {
+        return;
+    }
+    /* v2: clip once, then write rows directly (v1 made one clipped
+       hs_fb_fill call per GB pixel: 23,040 calls a frame). */
+    if (x < 0 || y < 0 || x + HS_GB_W * scale > fb->w || y + HS_GB_H * scale > fb->h) {
         return;
     }
     for (sy = 0; sy < HS_GB_H; sy++) {
-        for (sx = 0; sx < HS_GB_W; sx++) {
-            shade = fb160[sy * HS_GB_W + sx] & 0x03u;
-            for (j = 0; j < scale; j++) {
-                py = y + sy * scale + j;
-                for (i = 0; i < scale; i++) {
-                    px = x + sx * scale + i;
-                    hs_fb_fill(fb, px, py, 1, 1, pal[shade]);
+        const uint8_t *src = fb160 + (size_t)sy * HS_GB_W;
+        uint32_t *row = (uint32_t *)((uint8_t *)fb->pix
+                                     + (size_t)(y + sy * scale) * (size_t)fb->stride_bytes) + x;
+        if (scale == 1) {
+            for (sx = 0; sx < HS_GB_W; sx++) {
+                row[sx] = pal[src[sx] & 0x03u];
+            }
+        } else {
+            for (sx = 0; sx < HS_GB_W; sx++) {
+                uint32_t c = pal[src[sx] & 0x03u];
+                for (j = 0; j < scale; j++) {
+                    row[sx * scale + j] = c;
                 }
+            }
+            for (j = 1; j < scale; j++) {
+                memcpy((uint8_t *)row + (size_t)j * (size_t)fb->stride_bytes, row,
+                       (size_t)HS_GB_W * (size_t)scale * 4u);
             }
         }
     }
     hs_fb_rect(fb, x - 2, y - 2, HS_GB_W * scale + 4, HS_GB_H * scale + 4, 2, pal[2]);
+}
+
+/* ---- v3: live joypad and battery-backed cartridge RAM ---- */
+
+void hs_gb_set_joypad(struct hs_gb *g, uint8_t joy_mask)
+{
+    if (g == NULL) {
+        return;
+    }
+    atomic_store_explicit(&g->live_joy, (uint32_t)joy_mask, memory_order_release);
+    atomic_store_explicit(&g->live_mode, 1u, memory_order_release);
+}
+
+uint8_t *hs_gb_cart_ram(struct hs_gb *g, size_t *size)
+{
+    if (g == NULL) {
+        if (size != NULL) {
+            *size = 0;
+        }
+        return NULL;
+    }
+    if (size != NULL) {
+        *size = g->cart_ram_size;
+    }
+    return g->cart_ram;
+}
+
+int hs_gb_sram_dirty(struct hs_gb *g)
+{
+    return g != NULL &&
+           atomic_load_explicit(&g->sram_dirty, memory_order_relaxed) != 0u;
+}
+
+void hs_gb_sram_mark_clean(struct hs_gb *g)
+{
+    if (g != NULL) {
+        atomic_store_explicit(&g->sram_dirty, 0u, memory_order_relaxed);
+    }
+}
+
+void hs_gb_rom_title(const struct hs_gb *g, char *buf, size_t n)
+{
+    size_t i, k = 0;
+
+    if (buf == NULL || n == 0) {
+        return;
+    }
+    buf[0] = '\0';
+    if (g == NULL || g->rom == NULL || g->rom_size < 0x150) {
+        return;
+    }
+    for (i = 0x134; i < 0x144 && k + 1 < n; i++) {
+        uint8_t c = g->rom[i];
+        if (c == 0) {
+            break;
+        }
+        buf[k++] = (c >= 0x20 && c < 0x7F) ? (char)c : ' ';
+    }
+    buf[k] = '\0';
+}
+
+/* ---- v3-audio: hand the queued stereo PCM to the shell thread ---- */
+
+size_t hs_gb_pcm_take(struct hs_gb *g, int16_t *out, size_t max_samples)
+{
+    size_t n;
+
+    if (g == NULL) {
+        return 0;
+    }
+    n = g->pcm_q_n;
+    if (out != NULL) {
+        if (n > max_samples) {
+            n = max_samples;
+        }
+        memcpy(out, g->pcm_q, n * sizeof(int16_t));
+    }
+    g->pcm_q_n = 0;
+    return n;
+}
+
+unsigned hs_gb_pcm_rate_hz(void)
+{
+    /* AUDIO_SAMPLES stereo frames per DMG frame, 4194304 / 70224 frames/s. */
+    return (unsigned)(((uint64_t)(AUDIO_SAMPLES_TOTAL / 2u) * 4194304ull + 35112ull) / 70224ull);
 }

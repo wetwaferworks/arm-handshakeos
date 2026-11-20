@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <linux/input.h>
 #include <poll.h>
+#include <time.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -188,6 +189,14 @@ static void apply_event(struct hs_input *in, const struct input_event *ev)
 
 int hs_input_poll(struct hs_input *in, int timeout_ms)
 {
+    return hs_input_poll_ns(in, timeout_ms < 0 ? -1 : (int64_t)timeout_ms * 1000000ll);
+}
+
+/* v2: nanosecond timeout via ppoll(), so frame deadlines are not rounded
+   down to whole milliseconds as poll() did in v1. */
+int hs_input_poll_ns(struct hs_input *in, int64_t timeout_ns)
+{
+    struct timespec ts;
     struct pollfd pfds[HS_INPUT_MAX_FDS];
     struct input_event ev;
     int i, n, r;
@@ -209,7 +218,11 @@ int hs_input_poll(struct hs_input *in, int timeout_ms)
         pfds[i].revents = 0;
     }
 
-    r = poll(pfds, (nfds_t)in->n_fds, timeout_ms);
+    if (timeout_ns >= 0) {
+        ts.tv_sec = (time_t)(timeout_ns / 1000000000ll);
+        ts.tv_nsec = (long)(timeout_ns % 1000000000ll);
+    }
+    r = ppoll(pfds, (nfds_t)in->n_fds, timeout_ns >= 0 ? &ts : NULL, NULL);
     if (r < 0) {
         if (errno == EINTR) {
             return 0;

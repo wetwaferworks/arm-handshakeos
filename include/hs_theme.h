@@ -28,6 +28,8 @@ struct hs_palette {
     uint32_t warn;
     uint32_t shadow;
     uint32_t good;
+    uint32_t text_shadow; /* v2: drop shadow behind every glyph */
+    uint32_t gb[4];       /* v2: theme-aware high-contrast DMG shades 0..3 */
 };
 
 static inline uint32_t hs_rgb(uint8_t r, uint8_t g, uint8_t b)

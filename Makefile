@@ -3,7 +3,7 @@ CC       ?= gcc
 CROSS    ?= aarch64-linux-gnu-
 CSTD      = -std=c11
 WARN      = -Wall -Wextra -Werror
-OPT      ?= -O2
+OPT      ?= -O3
 DEFS      = -D_GNU_SOURCE
 INC       = -Iinclude
 GB_INC    = -Ithird_party/peanut-gb -Ithird_party/minigb_apu
@@ -12,7 +12,7 @@ TP_CFLAGS = $(CSTD) $(OPT) $(DEFS) $(INC) $(GB_INC) -DMINIGB_APU_AUDIO_FORMAT_S1
 LDFLAGS  ?=
 PTHREAD   = -pthread
 
-SRC = src/handshake.c src/fb.c src/ui.c src/input.c src/theme.c \
+SRC = src/handshake.c src/fb.c src/ui.c src/input.c src/theme.c src/gb_scale.c src/games.c src/play.c src/audio.c \
       src/font.c src/pngenc.c src/battery.c src/scoreboard.c src/gb_emu.c
 
 HOST_DIR  = build/host
@@ -26,7 +26,7 @@ CROSS_APU = $(CROSS_DIR)/minigb_apu.o
 .PHONY: all test bench preview preview-gb gb-test cross verify-cross clean
 
 all: $(HOST_DIR)/handshake-init $(HOST_DIR)/handshake-test $(HOST_DIR)/handshake-bench \
-     $(HOST_DIR)/handshake-gb $(HOST_DIR)/handshake-gb-test
+     $(HOST_DIR)/handshake-gb $(HOST_DIR)/handshake-gb-test $(HOST_DIR)/handshake-games-test $(HOST_DIR)/handshake-audio-test
 
 $(HOST_DIR)/%.o: src/%.c
 	@mkdir -p $(dir $@)
@@ -48,9 +48,9 @@ $(HOST_DIR)/handshake-gb: $(HOST_OBJ) $(HOST_APU) src/gb_host.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(GB_INC) -o $@ src/gb_host.c $(HOST_OBJ) $(HOST_APU) $(PTHREAD) $(LDFLAGS)
 
-$(HOST_DIR)/handshake-gb-test: $(HOST_DIR)/handshake.o $(HOST_DIR)/gb_emu.o $(HOST_DIR)/fb.o $(HOST_DIR)/font.o $(HOST_DIR)/pngenc.o $(HOST_APU) tests/test_gb_handshake.c
+$(HOST_DIR)/handshake-gb-test: $(HOST_DIR)/handshake.o $(HOST_DIR)/gb_emu.o $(HOST_DIR)/fb.o $(HOST_DIR)/font.o $(HOST_DIR)/pngenc.o $(HOST_DIR)/gb_scale.o $(HOST_APU) tests/test_gb_handshake.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(GB_INC) -o $@ tests/test_gb_handshake.c $(HOST_DIR)/handshake.o $(HOST_DIR)/gb_emu.o $(HOST_DIR)/fb.o $(HOST_DIR)/font.o $(HOST_DIR)/pngenc.o $(HOST_APU) $(PTHREAD) $(LDFLAGS)
+	$(CC) $(CFLAGS) $(GB_INC) -o $@ tests/test_gb_handshake.c $(HOST_DIR)/handshake.o $(HOST_DIR)/gb_emu.o $(HOST_DIR)/fb.o $(HOST_DIR)/font.o $(HOST_DIR)/pngenc.o $(HOST_DIR)/gb_scale.o $(HOST_APU) $(PTHREAD) $(LDFLAGS)
 
 $(HOST_DIR)/handshake-test: $(HOST_DIR)/handshake.o tests/test_handshake.c
 	@mkdir -p $(dir $@)
@@ -87,7 +87,7 @@ $(CROSS_APU): third_party/minigb_apu/minigb_apu.c
 	@mkdir -p $(dir $@)
 	$(CROSS)gcc $(TP_CFLAGS) -c $< -o $@
 
-cross: $(CROSS_DIR)/handshake-init $(CROSS_DIR)/handshake-test $(CROSS_DIR)/handshake-bench        $(CROSS_DIR)/handshake-gb $(CROSS_DIR)/handshake-gb-test
+cross: $(CROSS_DIR)/handshake-init $(CROSS_DIR)/handshake-test $(CROSS_DIR)/handshake-bench        $(CROSS_DIR)/handshake-gb $(CROSS_DIR)/handshake-gb-test $(CROSS_DIR)/handshake-games-test $(CROSS_DIR)/handshake-audio-test
 
 $(CROSS_DIR)/handshake-init: $(CROSS_OBJ) $(CROSS_APU) src/init.c
 	@mkdir -p $(dir $@)
@@ -105,9 +105,9 @@ $(CROSS_DIR)/handshake-gb: $(CROSS_OBJ) $(CROSS_APU) src/gb_host.c
 	@mkdir -p $(dir $@)
 	$(CROSS)gcc $(CFLAGS) $(GB_INC) -static -o $@ src/gb_host.c $(CROSS_OBJ) $(CROSS_APU) $(PTHREAD)
 
-$(CROSS_DIR)/handshake-gb-test: $(CROSS_DIR)/handshake.o $(CROSS_DIR)/gb_emu.o $(CROSS_DIR)/fb.o $(CROSS_DIR)/font.o $(CROSS_DIR)/pngenc.o $(CROSS_APU) tests/test_gb_handshake.c
+$(CROSS_DIR)/handshake-gb-test: $(CROSS_DIR)/handshake.o $(CROSS_DIR)/gb_emu.o $(CROSS_DIR)/fb.o $(CROSS_DIR)/font.o $(CROSS_DIR)/pngenc.o $(CROSS_DIR)/gb_scale.o $(CROSS_APU) tests/test_gb_handshake.c
 	@mkdir -p $(dir $@)
-	$(CROSS)gcc $(CFLAGS) $(GB_INC) -static -o $@ tests/test_gb_handshake.c $(CROSS_DIR)/handshake.o $(CROSS_DIR)/gb_emu.o $(CROSS_DIR)/fb.o $(CROSS_DIR)/font.o $(CROSS_DIR)/pngenc.o $(CROSS_APU) $(PTHREAD)
+	$(CROSS)gcc $(CFLAGS) $(GB_INC) -static -o $@ tests/test_gb_handshake.c $(CROSS_DIR)/handshake.o $(CROSS_DIR)/gb_emu.o $(CROSS_DIR)/fb.o $(CROSS_DIR)/font.o $(CROSS_DIR)/pngenc.o $(CROSS_DIR)/gb_scale.o $(CROSS_APU) $(PTHREAD)
 
 verify-cross: cross
 	file $(CROSS_DIR)/handshake-init $(CROSS_DIR)/handshake-test $(CROSS_DIR)/handshake-bench $(CROSS_DIR)/handshake-gb-test
@@ -125,6 +125,22 @@ verify-cross: cross
 	else \
 		echo "qemu-aarch64 not installed; link verified only"; \
 	fi
+
+$(HOST_DIR)/handshake-games-test: $(HOST_DIR)/fb.o $(HOST_DIR)/font.o $(HOST_DIR)/pngenc.o $(HOST_DIR)/games.o $(HOST_DIR)/handshake.o $(HOST_DIR)/gb_emu.o $(HOST_APU) tests/test_games.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(GB_INC) -o $@ tests/test_games.c $(HOST_DIR)/fb.o $(HOST_DIR)/font.o $(HOST_DIR)/pngenc.o $(HOST_DIR)/games.o $(HOST_DIR)/handshake.o $(HOST_DIR)/gb_emu.o $(HOST_APU) $(PTHREAD)
+
+$(CROSS_DIR)/handshake-games-test: $(CROSS_DIR)/fb.o $(CROSS_DIR)/font.o $(CROSS_DIR)/pngenc.o $(CROSS_DIR)/games.o $(CROSS_DIR)/handshake.o $(CROSS_DIR)/gb_emu.o $(CROSS_APU) tests/test_games.c
+	@mkdir -p $(dir $@)
+	$(CROSS)gcc $(CFLAGS) $(GB_INC) -static -o $@ tests/test_games.c $(CROSS_DIR)/fb.o $(CROSS_DIR)/font.o $(CROSS_DIR)/pngenc.o $(CROSS_DIR)/games.o $(CROSS_DIR)/handshake.o $(CROSS_DIR)/gb_emu.o $(CROSS_APU) $(PTHREAD)
+
+$(HOST_DIR)/handshake-audio-test: $(HOST_DIR)/audio.o tests/test_audio.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -o $@ tests/test_audio.c $(HOST_DIR)/audio.o
+
+$(CROSS_DIR)/handshake-audio-test: $(CROSS_DIR)/audio.o tests/test_audio.c
+	@mkdir -p $(dir $@)
+	$(CROSS)gcc $(CFLAGS) -static -o $@ tests/test_audio.c $(CROSS_DIR)/audio.o
 
 clean:
 	rm -rf build

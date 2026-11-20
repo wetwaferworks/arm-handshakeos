@@ -141,16 +141,14 @@ dd if="$ROOT_IMG" of="$OUT" bs=512 seek=${ROOT_START} conv=notrunc status=none
 dd if="$ROMS_IMG" of="$OUT" bs=512 seek=${ROMS_START} conv=notrunc status=none
 
 # Verify
-python3 - << PY
-from pathlib import Path
-p=Path("$OUT")
-b=p.read_bytes()
-magic=b[0x2004:0x2004+8]
-print("image", p, "bytes", len(b))
-print("eGON.BT0 at 0x2004:", magic, "OK" if magic==b"eGON.BT0" else "FAIL")
-if magic!=b"eGON.BT0":
-    raise SystemExit(2)
-PY
+magic=$(dd if="$OUT" bs=1 skip=$((0x2004)) count=8 status=none)
+echo "image $OUT bytes $(stat -c %s "$OUT")"
+if [ "$magic" = "eGON.BT0" ]; then
+    echo "eGON.BT0 at 0x2004: $magic OK"
+else
+    echo "eGON.BT0 at 0x2004: $magic FAIL"
+    exit 2
+fi
 /usr/sbin/fdisk -l "$OUT" || true
 sha256sum "$OUT" | tee "$OUT.sha256"
 zstd -19 -f -T0 "$OUT" -o "$OUT.zst"

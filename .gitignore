@@ -15,3 +15,11 @@ u-boot-*/
 arm-trusted-firmware-*/
 cscope.out
 tags
+# push prep (REVIEW.md)
+out/
+logs/
+*.log
+*.tmp
+*.uimg
+*.cpio.gz
+*.zst

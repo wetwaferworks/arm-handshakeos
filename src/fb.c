@@ -34,6 +34,9 @@
 #endif
 #endif
 
+#define HS_DRM_FORMAT_XRGB8888 ((uint32_t)'X' | ((uint32_t)'R' << 8) \
+                                | ((uint32_t)'2' << 16) | ((uint32_t)'4' << 24))
+
 static uint32_t *pix_at(struct hs_fb *fb, int x, int y)
 {
     return (uint32_t *)((uint8_t *)fb->pix + (size_t)y * (size_t)fb->stride_bytes) + x;
@@ -117,7 +120,8 @@ static void blit_to_hw(struct hs_fb *fb)
 
     /* Fast path: packed XRGB8888, same layout, same size. */
     if (fb->hw_bpp == 32 && fb->red_off == 16 && fb->green_off == 8
-        && fb->blue_off == 0 && fb->hw_w == fb->w && fb->hw_h == fb->h
+        && fb->blue_off == 0 && fb->red_len == 8 && fb->green_len == 8
+        && fb->blue_len == 8 && fb->hw_w == fb->w && fb->hw_h == fb->h
         && fb->hw_stride == fb->stride_bytes) {
         memcpy(fb->hw_map, fb->pix, (size_t)fb->h * (size_t)fb->stride_bytes);
         return;
@@ -136,7 +140,8 @@ static void blit_to_hw(struct hs_fb *fb)
         } else {
             uint32_t *d32 = (uint32_t *)dst;
             const uint32_t *s32 = (const uint32_t *)src;
-            if (fb->red_off == 16 && fb->green_off == 8 && fb->blue_off == 0) {
+            if (fb->red_off == 16 && fb->green_off == 8 && fb->blue_off == 0
+                && fb->red_len == 8 && fb->green_len == 8 && fb->blue_len == 8) {
                 memcpy(d32, s32, (size_t)dw * 4);
             } else {
                 for (x = 0; x < dw; x++) {
@@ -351,17 +356,37 @@ int hs_fb_open(struct hs_fb *fb, const char *backend)
             close(fd);
             return err;
         }
+        /* v2: ask for DRM_FORMAT_XRGB8888 explicitly (ADDFB2) so the
+           channel order is pinned: byte 2 = R, byte 1 = G, byte 0 = B, which
+           is exactly how hs_rgb() packs. The legacy ADDFB (bpp 32, depth 24)
+           fallback maps to the same XRGB8888 in drm_mode_legacy_fb_format(). */
         memset(&fbcmd, 0, sizeof(fbcmd));
-        fbcmd.width = creq.width;
-        fbcmd.height = creq.height;
-        fbcmd.pitch = creq.pitch;
-        fbcmd.bpp = 32;
-        fbcmd.depth = 24;
-        fbcmd.handle = creq.handle;
-        if (ioctl(fd, DRM_IOCTL_MODE_ADDFB, &fbcmd) != 0) {
-            int err = -errno;
-            close(fd);
-            return err;
+        {
+            struct drm_mode_fb_cmd2 f2;
+            memset(&f2, 0, sizeof(f2));
+            f2.width = creq.width;
+            f2.height = creq.height;
+            f2.pixel_format = HS_DRM_FORMAT_XRGB8888;
+            f2.handles[0] = creq.handle;
+            f2.pitches[0] = creq.pitch;
+            f2.offsets[0] = 0;
+            if (ioctl(fd, DRM_IOCTL_MODE_ADDFB2, &f2) == 0) {
+                fbcmd.fb_id = f2.fb_id;
+                fb->drm_addfb2 = 1;
+            } else {
+                fbcmd.width = creq.width;
+                fbcmd.height = creq.height;
+                fbcmd.pitch = creq.pitch;
+                fbcmd.bpp = 32;
+                fbcmd.depth = 24;
+                fbcmd.handle = creq.handle;
+                if (ioctl(fd, DRM_IOCTL_MODE_ADDFB, &fbcmd) != 0) {
+                    int err = -errno;
+                    close(fd);
+                    return err;
+                }
+                fb->drm_addfb2 = 0;
+            }
         }
         memset(&mreq, 0, sizeof(mreq));
         mreq.handle = creq.handle;
@@ -436,6 +461,48 @@ void hs_fb_close(struct hs_fb *fb)
     fb->own_pix = 0;
 }
 
+void hs_fb_swap_rb(struct hs_fb *fb)
+{
+    unsigned t;
+
+    if (fb == NULL) {
+        return;
+    }
+    t = fb->red_off;
+    fb->red_off = fb->blue_off;
+    fb->blue_off = t;
+    t = fb->red_len;
+    fb->red_len = fb->blue_len;
+    fb->blue_len = t;
+    fb->swapped_rb = !fb->swapped_rb;
+}
+
+const char *hs_fb_describe(const struct hs_fb *fb)
+{
+    static char buf[160];
+    const char *kind = "headless";
+
+    if (fb == NULL) {
+        return "none";
+    }
+    if (fb->kind == HS_FB_DRM) {
+        kind = fb->drm_addfb2 ? "DRM ADDFB2" : "DRM ADDFB";
+    } else if (fb->kind == HS_FB_FBDEV) {
+        kind = "fbdev";
+    }
+    if (fb->kind == HS_FB_HEADLESS) {
+        snprintf(buf, sizeof(buf), "headless XRGB8888 %dx%d", fb->w, fb->h);
+        return buf;
+    }
+    snprintf(buf, sizeof(buf),
+             "%s %dx%d %dbpp R%u:%u G%u:%u B%u:%u stride %d%s",
+             kind, fb->hw_w, fb->hw_h, fb->hw_bpp,
+             fb->red_off, fb->red_len, fb->green_off, fb->green_len,
+             fb->blue_off, fb->blue_len, fb->hw_stride,
+             fb->swapped_rb ? " (R/B swapped by handshakeos.bgr)" : "");
+    return buf;
+}
+
 void hs_fb_flip(struct hs_fb *fb)
 {
     if (fb == NULL) {
@@ -446,12 +513,30 @@ void hs_fb_flip(struct hs_fb *fb)
 
 void hs_fb_clear(struct hs_fb *fb, uint32_t color)
 {
+    if (fb == NULL || fb->pix == NULL) {
+        return;
+    }
     hs_fb_fill(fb, 0, 0, fb->w, fb->h, color);
+}
+
+/* v2 hot path: one clip per rectangle, then straight row stores that the
+   compiler turns into wide vector writes at -O3. No per-pixel bounds checks
+   and no per-pixel function calls (v1 paid both for every glyph pixel,
+   circle pixel and GB pixel). Single-threaded on the shadow buffer. */
+static inline void fill_row(uint32_t *row, int n, uint32_t color)
+{
+    int i;
+
+    for (i = 0; i < n; i++) {
+        row[i] = color;
+    }
 }
 
 void hs_fb_fill(struct hs_fb *fb, int x, int y, int w, int h, uint32_t color)
 {
-    int xx, yy, x0, y0, x1, y1;
+    int yy, x0, y0, x1, y1;
+    uint32_t *first;
+    size_t stride_px;
 
     if (fb == NULL || fb->pix == NULL || w <= 0 || h <= 0) {
         return;
@@ -466,52 +551,78 @@ void hs_fb_fill(struct hs_fb *fb, int x, int y, int w, int h, uint32_t color)
     if (y1 > fb->h) {
         y1 = fb->h;
     }
-    for (yy = y0; yy < y1; yy++) {
-        uint32_t *row = pix_at(fb, 0, yy);
-        for (xx = x0; xx < x1; xx++) {
-            row[xx] = color;
+    if (x0 >= x1 || y0 >= y1) {
+        return;
+    }
+    stride_px = (size_t)fb->stride_bytes / 4u;
+    first = pix_at(fb, x0, y0);
+    fill_row(first, x1 - x0, color);
+    for (yy = y0 + 1; yy < y1; yy++) {
+        uint32_t *row = first + (size_t)(yy - y0) * stride_px;
+        if (x1 - x0 >= 16) {
+            memcpy(row, first, (size_t)(x1 - x0) * 4u);
+        } else {
+            fill_row(row, x1 - x0, color);
         }
     }
 }
 
 void hs_fb_rect(struct hs_fb *fb, int x, int y, int w, int h, int thickness, uint32_t color)
 {
-    int t;
-
     if (thickness < 1) {
         thickness = 1;
     }
-    for (t = 0; t < thickness; t++) {
-        hs_fb_fill(fb, x + t, y + t, w - 2 * t, 1, color);
-        hs_fb_fill(fb, x + t, y + h - 1 - t, w - 2 * t, 1, color);
-        hs_fb_fill(fb, x + t, y + t, 1, h - 2 * t, color);
-        hs_fb_fill(fb, x + w - 1 - t, y + t, 1, h - 2 * t, color);
+    if (w <= 0 || h <= 0) {
+        return;
     }
+    if (thickness * 2 >= w || thickness * 2 >= h) {
+        hs_fb_fill(fb, x, y, w, h, color);
+        return;
+    }
+    hs_fb_fill(fb, x, y, w, thickness, color);
+    hs_fb_fill(fb, x, y + h - thickness, w, thickness, color);
+    hs_fb_fill(fb, x, y + thickness, thickness, h - 2 * thickness, color);
+    hs_fb_fill(fb, x + w - thickness, y + thickness, thickness, h - 2 * thickness, color);
+}
+
+/* Integer half-width of a disc row: largest dx with dx*dx + dy*dy <= r*r. */
+static int disc_half(int r, int dy)
+{
+    int r2 = r * r - dy * dy;
+    int dx = 0;
+
+    if (r2 < 0) {
+        return -1;
+    }
+    dx = r;
+    while (dx > 0 && dx * dx > r2) {
+        dx--;
+    }
+    return dx;
 }
 
 void hs_fb_fill_circle(struct hs_fb *fb, int cx, int cy, int radius, uint32_t color)
 {
-    int x, y, r2;
+    int y;
 
-    if (radius < 1) {
+    if (fb == NULL || radius < 1) {
         return;
     }
-    r2 = radius * radius;
     for (y = -radius; y <= radius; y++) {
-        for (x = -radius; x <= radius; x++) {
-            if (x * x + y * y <= r2) {
-                int px = cx + x;
-                int py = cy + y;
-                if (px >= 0 && py >= 0 && px < fb->w && py < fb->h) {
-                    pix_at(fb, px, py)[0] = color;
-                }
-            }
+        int dx = disc_half(radius, y);
+        if (dx >= 0) {
+            hs_fb_fill(fb, cx - dx, cy + y, 2 * dx + 1, 1, color);
         }
     }
 }
 
 void hs_fb_fill_round(struct hs_fb *fb, int x, int y, int w, int h, int radius, uint32_t color)
 {
+    int r;
+
+    if (w <= 0 || h <= 0) {
+        return;
+    }
     if (radius <= 0) {
         hs_fb_fill(fb, x, y, w, h, color);
         return;
@@ -522,53 +633,73 @@ void hs_fb_fill_round(struct hs_fb *fb, int x, int y, int w, int h, int radius, 
     if (radius * 2 > h) {
         radius = h / 2;
     }
-    hs_fb_fill(fb, x + radius, y, w - 2 * radius, h, color);
-    hs_fb_fill(fb, x, y + radius, radius, h - 2 * radius, color);
-    hs_fb_fill(fb, x + w - radius, y + radius, radius, h - 2 * radius, color);
-    hs_fb_fill_circle(fb, x + radius, y + radius, radius, color);
-    hs_fb_fill_circle(fb, x + w - 1 - radius, y + radius, radius, color);
-    hs_fb_fill_circle(fb, x + radius, y + h - 1 - radius, radius, color);
-    hs_fb_fill_circle(fb, x + w - 1 - radius, y + h - 1 - radius, radius, color);
+    /* Middle band in one fill, then one span per corner row (same pixel
+       coverage as v1's centre rectangle + four discs). */
+    hs_fb_fill(fb, x, y + radius, w, h - 2 * radius, color);
+    for (r = 0; r < radius; r++) {
+        int dy = radius - r;
+        int dx = disc_half(radius, dy);
+        int span;
+        if (dx < 0) {
+            continue;
+        }
+        span = (w - 1 - 2 * radius) + 2 * dx + 1;
+        hs_fb_fill(fb, x + radius - dx, y + r, span, 1, color);
+        hs_fb_fill(fb, x + radius - dx, y + h - 1 - r, span, 1, color);
+    }
 }
 
-static void draw_glyph(struct hs_fb *fb, int x, int y, int scale, uint32_t color, int ch)
+/* Draw one glyph as horizontal runs: each run of set bits in a font row
+   becomes a single (run*scale + bold) x scale rectangle. `bold` widens each
+   run by that many output pixels (a clean smear-bold that keeps counters
+   open at scale >= 2). */
+static void draw_glyph(struct hs_fb *fb, int x, int y, int scale, int bold,
+                       uint32_t color, int ch)
 {
     const uint8_t *g = hs_font_glyph(ch);
-    int row, col, sy, sx;
+    int row, col;
 
-    if (scale < 1) {
-        scale = 1;
-    }
     for (row = 0; row < HS_FONT_H; row++) {
-        uint8_t bits = g[row];
-        for (col = 0; col < HS_FONT_W; col++) {
-            if ((bits & (uint8_t)(0x80u >> col)) == 0) {
+        unsigned bits = g[row];
+        col = 0;
+        while (col < HS_FONT_W) {
+            int start;
+            if ((bits & (0x80u >> (unsigned)col)) == 0) {
+                col++;
                 continue;
             }
-            if (scale == 1) {
-                int px = x + col;
-                int py = y + row;
-                if (px >= 0 && py >= 0 && px < fb->w && py < fb->h) {
-                    pix_at(fb, px, py)[0] = color;
-                }
-            } else {
-                for (sy = 0; sy < scale; sy++) {
-                    for (sx = 0; sx < scale; sx++) {
-                        int px = x + col * scale + sx;
-                        int py = y + row * scale + sy;
-                        if (px >= 0 && py >= 0 && px < fb->w && py < fb->h) {
-                            pix_at(fb, px, py)[0] = color;
-                        }
-                    }
-                }
+            start = col;
+            while (col < HS_FONT_W && (bits & (0x80u >> (unsigned)col)) != 0) {
+                col++;
             }
+            hs_fb_fill(fb, x + start * scale, y + row * scale,
+                       (col - start) * scale + bold, scale, color);
         }
     }
 }
 
-int hs_fb_text(struct hs_fb *fb, int x, int y, int scale, uint32_t color, const char *s)
+void hs_fb_checker(struct hs_fb *fb, uint32_t color)
 {
-    int cx = x;
+    int x, y;
+
+    if (fb == NULL || fb->pix == NULL) {
+        return;
+    }
+    for (y = 0; y < fb->h; y++) {
+        uint32_t *row = pix_at(fb, 0, y);
+        for (x = y & 1; x < fb->w; x += 2) {
+            row[x] = color;
+        }
+    }
+}
+
+int hs_fb_text_ex(struct hs_fb *fb, int x, int y, int scale, uint32_t color,
+                  uint32_t shadow, unsigned flags, const char *s)
+{
+    const char *p;
+    int cx;
+    int bold = 0;
+    int off = 0;
 
     if (fb == NULL || s == NULL) {
         return 0;
@@ -576,12 +707,28 @@ int hs_fb_text(struct hs_fb *fb, int x, int y, int scale, uint32_t color, const 
     if (scale < 1) {
         scale = 1;
     }
-    while (*s) {
-        draw_glyph(fb, cx, y, scale, color, (unsigned char)*s);
+    if (flags & HS_TEXT_BOLD) {
+        bold = scale >= 2 ? scale / 2 : 1;
+    }
+    if (flags & HS_TEXT_SHADOW) {
+        off = scale >= 2 ? 2 : 1;
+        cx = x;
+        for (p = s; *p; p++) {
+            draw_glyph(fb, cx + off, y + off, scale, bold, shadow, (unsigned char)*p);
+            cx += HS_FONT_W * scale;
+        }
+    }
+    cx = x;
+    for (p = s; *p; p++) {
+        draw_glyph(fb, cx, y, scale, bold, color, (unsigned char)*p);
         cx += HS_FONT_W * scale;
-        s++;
     }
     return cx - x;
+}
+
+int hs_fb_text(struct hs_fb *fb, int x, int y, int scale, uint32_t color, const char *s)
+{
+    return hs_fb_text_ex(fb, x, y, scale, color, 0, 0u, s);
 }
 
 int hs_fb_printf(struct hs_fb *fb, int x, int y, int scale, uint32_t color, const char *fmt, ...)
@@ -593,6 +740,18 @@ int hs_fb_printf(struct hs_fb *fb, int x, int y, int scale, uint32_t color, cons
     vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
     return hs_fb_text(fb, x, y, scale, color, buf);
+}
+
+int hs_fb_printf_ex(struct hs_fb *fb, int x, int y, int scale, uint32_t color,
+                    uint32_t shadow, unsigned flags, const char *fmt, ...)
+{
+    char buf[256];
+    va_list ap;
+
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    return hs_fb_text_ex(fb, x, y, scale, color, shadow, flags, buf);
 }
 
 int hs_fb_snapshot_ppm(const struct hs_fb *fb, const char *path)

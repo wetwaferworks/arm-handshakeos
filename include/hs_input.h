@@ -55,6 +55,7 @@ struct hs_input {
 int  hs_input_open(struct hs_input *in);
 void hs_input_close(struct hs_input *in);
 int  hs_input_poll(struct hs_input *in, int timeout_ms);
+int  hs_input_poll_ns(struct hs_input *in, int64_t timeout_ns); /* <0 = block */
 int  hs_input_down(const struct hs_input *in, hs_btn_t btn);
 int  hs_input_pressed(const struct hs_input *in, hs_btn_t btn);
 const char *hs_btn_name(hs_btn_t btn);

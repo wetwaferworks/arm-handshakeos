@@ -20,7 +20,14 @@ if [ ! -x "$INIT" ]; then
     exit 1
 fi
 
-python3 "$ROOT/board/qemu-virt/pack-initramfs.py" "$INIT" "$ROM" "$OUT"
+# initramfs writer: board/qemu-virt/pack-initramfs.c (pure C11, built with HC; mtime from SOURCE_DATE_EPOCH)
+HC="${HC:-$ROOT/../hc/build/current/hc}"
+PACKDIR="${PACKDIR:-$ROOT/build/tools}"
+mkdir -p "$PACKDIR"
+"$HC" --allow-runtime -std=c11 -O2 -Wall -Wextra -Werror -c "$ROOT/board/qemu-virt/pack-initramfs.c" -o "$PACKDIR/pack-initramfs.o"
+gcc -o "$PACKDIR/pack-initramfs" "$PACKDIR/pack-initramfs.o"
+"$PACKDIR/pack-initramfs" "$INIT" "$ROM" | gzip -9n > "$OUT"
+echo "initramfs $OUT ($(stat -c %s "$OUT") bytes gz)"
 
 set +e
 timeout --signal=KILL "${QEMU_TIMEOUT:-90}" \

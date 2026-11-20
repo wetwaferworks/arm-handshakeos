@@ -410,6 +410,9 @@ static void *worker_main(void *arg)
     uint32_t word;
 
     while (!hs->stop) {
+        /* FIX (Layer-2 eval): sample the futex word BEFORE polling so a publish
+         * landing between a failed poll and futex_wait cannot be lost. */
+        word = atomic_load_explicit(&hs->publish_word, memory_order_acquire);
         if (hs_hs_poll_phase(hs, shard, seen, &snap)) {
             set_beat(hs, HS_BEAT_PULL);
             if (snap.due_work) {
@@ -425,7 +428,6 @@ static void *worker_main(void *arg)
         if (hs->stop) {
             break;
         }
-        word = atomic_load_explicit(&hs->publish_word, memory_order_acquire);
         futex_wait(&hs->publish_word, word);
     }
     return NULL;

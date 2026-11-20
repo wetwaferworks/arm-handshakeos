@@ -55,4 +55,23 @@ int hs_gb_scoreboard(const char *rom_path, int workers, uint64_t frames,
 void hs_gb_blit(struct hs_fb *fb, int x, int y, int scale,
                    const uint8_t *fb160, const uint32_t pal[4]);
 
+/* ---- v3 live play ---- */
+/* Live joypad (JOYPAD_* bits, 1 = pressed). The first call switches the
+   core from the scripted event ledger to this value; store it in PRE,
+   before hs_gb_run_frames() releases the phase. */
+void     hs_gb_set_joypad(struct hs_gb *g, uint8_t joy_mask);
+/* Battery-backed cartridge RAM (NULL / 0 when the cart has none). */
+uint8_t *hs_gb_cart_ram(struct hs_gb *g, size_t *size);
+int      hs_gb_sram_dirty(struct hs_gb *g);
+void     hs_gb_sram_mark_clean(struct hs_gb *g);
+/* Header title (0x134..0x143), printable ASCII only. */
+void     hs_gb_rom_title(const struct hs_gb *g, char *buf, size_t n);
+
+/* ---- v3-audio ---- */
+/* Live mode only: move queued interleaved S16 stereo samples (all frames
+   run since the last take) into `out`. Call between hs_gb_run_frames(). */
+size_t   hs_gb_pcm_take(struct hs_gb *g, int16_t *out, size_t max_samples);
+/* Effective APU output rate (stereo frames per second), ~32731 Hz. */
+unsigned hs_gb_pcm_rate_hz(void);
+
 #endif
