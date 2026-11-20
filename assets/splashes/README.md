@@ -5,8 +5,8 @@ Anbernic RG35XX 2024, built to Cortana's verified kernel / framebuffer
 specs and JD's instruction to redo logos for exact 4:3 fit and
 proportions.
 
-**Status:** `PENDING-REVIEW`. Nothing has been sent to Cortana or copied
-to TheWorkstation.
+**Status:** the PNG pack in this folder is what HandshakeOS ships. The
+boot image is packed by the pure-C tool `tools/hs-pack-splash.c`.
 
 JD approved including all 8 `o.O` options as a pack on **November 19,
 2026 at 5:36 PM ET**, then asked that some logos be redone so they fit
@@ -127,7 +127,6 @@ icons stay sharp.
 
 ```
 splashes/
-  build_splashes.py
   README.md
   manifest.txt
   01-silicon-wafer-pulse-purple.png
@@ -140,16 +139,8 @@ splashes/
     handshakeos-redos-before-after.png
 ```
 
-Zip (sibling of this folder):
-
-`/workspace/scratch/handshakeos/handshakeos-oO-splash-pack-v1.zip`
-(16.08 MB)
-
-Rebuild:
-
-```
-python3 /workspace/scratch/handshakeos/splashes/build_splashes.py
-```
+The PNG files in this folder are the splash pack. HandshakeOS packs them
+into the boot image with `tools/hs-pack-splash.c`.
 
 ## manifest.txt
 

@@ -4,8 +4,8 @@ Built 2026-11-19, America/New_York.
 Default DRAM: LPDDR3 1024 MiB (DCDC3 1.2 V, 672 MHz). LPDDR4 is the alternate.
 DTB: NV3052C-clean (anbernic,rg35xx-plus-panel only).
 Boot scripts are mkimage -A arm (required by sunxi-fel).
-A live kit already staged on TheWorkstation at D:\scratch\lithoos\fel\ was
-left untouched so an in-progress FEL test is not disrupted.
+A previously staged live FEL kit was left untouched so an in-progress FEL
+test is not disrupted.
 
 Windows already saw the handheld in FEL mode:
   USB\VID_1F3A&PID_EFE8\...

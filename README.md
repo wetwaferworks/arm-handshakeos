@@ -68,7 +68,7 @@ v5.5 bundles every fix made so far into one image (v5.4 was skipped on purpose).
 
 - The shipped binaries are linked `-static -nostdlib` against HandshakeOS objects and **`hs_rt`**, our own small runtime (`src/hs_rt/`). They use no glibc and no libpthread. Threads are created with raw `clone()`, and allocator state is per thread.
 - Every object is compiled by the **Handshake Compiler (HC)**, which refuses to emit an object that contains a lock primitive and audits every ELF file for lock symbols.
-- `tools/zero-mutex-scan.sh` rescans every shipped binary: pthread_mutex symbols 0, lock/futex symbols 0, NPTL/glibc strings 0.
+- A rescan of every shipped binary (the script lives in handshake-builds as `v5/tools/zero-mutex-scan.sh`): pthread_mutex symbols 0, lock/futex symbols 0, NPTL/glibc strings 0.
 - **The one exception in v5.5:** the two N64 diagnostic tools `bench_n64` and `hs_pf_probe` still link static glibc, which brings in glibc's internal pthread mutex. PID 1, every emulator core (the N64 core objects included, at 0 lock symbols) and both USB modules scan clean. v5.6 relinks the two tools against `hs_rt`.
 
 ## Building and testing
@@ -83,7 +83,7 @@ make cross      # static aarch64 binaries (hs_rt, no glibc)
 make verify-cross
 ```
 
-All build, pack and test tooling is C. No Python is used anywhere.
+All build, pack and test tooling is C (plus shell). No Python is used anywhere in this repo.
 
 ## Putting it on the handheld
 
